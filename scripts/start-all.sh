@@ -92,11 +92,11 @@ fi
 docker run -d \
     --name $PROXY_CONTAINER \
     --network $NETWORK_NAME \
-    -p 8081:8081 \
     -p 8082:8082 \
+    -p 8083:8081 \
     charge-proxy:latest
 
-echo "Charge Proxy started on ports 8081 (REST) and 8082 (SOAP)."
+echo "Charge Proxy started on ports 8082 (SOAP) and 8083 (Actuator)."
 
 # Wait for services to be healthy
 echo ""

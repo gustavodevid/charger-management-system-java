@@ -105,11 +105,11 @@ if ($proxyExists) {
 docker run -d `
     --name $ProxyContainer `
     --network $NetworkName `
-    -p 8081:8081 `
     -p 8082:8082 `
+    -p 8083:8081 `
     charge-proxy:latest
 
-Write-Host "Charge Proxy started on ports 8081 (REST) and 8082 (SOAP)."
+Write-Host "Charge Proxy started on ports 8082 (SOAP) and 8083 (Actuator)."
 
 # Wait for services to be healthy
 Write-Host ""
