@@ -1,6 +1,6 @@
 # Charge Management System
 
-Sistema distribuído de gerenciamento de cobranças com integração ao gateway de pagamento ASAAS, construído com Spring Boot e containerizado com Docker.
+Sistema distribuído de gerenciamento de cobranças com integração ao gateway de pagamento ASAAS, construído com Spring Boot e orquestrado com **Docker Swarm**.
 
 ## Como Executar
 
@@ -10,7 +10,7 @@ Sistema distribuído de gerenciamento de cobranças com integração ao gateway 
 
 ### Passo a Passo
 
-#### Construir as Imagens Docker
+#### 1. Construir as Imagens Docker
 
 **Windows (PowerShell):**
 ```powershell
@@ -23,7 +23,31 @@ chmod +x scripts/*.sh
 ./scripts/build-all.sh
 ```
 
-#### Iniciar o Sistema
+#### 2. Inicializar Docker Swarm
+
+**Windows (PowerShell):**
+```powershell
+.\scripts\swarm-init.ps1
+```
+
+**Linux/macOS:**
+```bash
+./scripts/swarm-init.sh
+```
+
+#### 3. Deploy no Docker Swarm
+
+**Windows (PowerShell):**
+```powershell
+.\scripts\swarm-deploy.ps1
+```
+
+**Linux/macOS:**
+```bash
+./scripts/swarm-deploy.sh
+```
+
+#### Alternativa: Modo Standalone (sem Swarm)
 
 **Windows (PowerShell):**
 ```powershell
@@ -56,13 +80,35 @@ curl -X POST "http://localhost:8081/ws/customer" \
   -d '<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:soap="http://chargemanager.dac.com/soap"><soapenv:Body><soap:createCustomer><CustomerRequest><name>João Silva</name><email>joao@example.com</email><cpfCnpj>12345678901</cpfCnpj><phone>11999999999</phone></CustomerRequest></soap:createCustomer></soapenv:Body></soapenv:Envelope>'
 ```
 
-#### Parar o Sistema
+#### Verificar Status do Swarm
 
 **Windows (PowerShell):**
 ```powershell
-.\scripts\stop-all.ps1
+.\scripts\swarm-status.ps1
+```
 
-# Parar e remover tudo (incluindo dados)
+**Linux/macOS:**
+```bash
+./scripts/swarm-status.sh
+```
+
+#### Parar o Sistema
+
+**Docker Swarm:**
+```powershell
+# Windows
+.\scripts\swarm-remove.ps1
+
+# Linux/macOS
+./scripts/swarm-remove.sh
+
+# Para também sair do Swarm:
+.\scripts\swarm-remove.ps1 -Leave
+./scripts/swarm-remove.sh --leave
+```
+
+**Modo Standalone:**
+```powershell
 .\scripts\stop-all.ps1 -Clean
 ```
 
@@ -70,7 +116,7 @@ curl -X POST "http://localhost:8081/ws/customer" \
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Docker Network                                │
+│                     Docker Swarm Overlay Network                     │
 │  ┌──────────────────┐    ┌──────────────────┐    ┌───────────────┐  │
 │  │  Charge Manager  │    │   Charge Proxy   │    │  PostgreSQL   │  │
 │  │  (Ports 8080/81) │◄──►│ (Ports 8082/83)  │    │  (Port 5432)  │  │
@@ -111,10 +157,15 @@ charger-management-system-java/
 │   ├── Dockerfile
 │   └── pom.xml
 ├── scripts/                     # Scripts de orquestração Docker
-│   ├── build-all.sh / .ps1
-│   ├── start-all.sh / .ps1
-│   ├── stop-all.sh / .ps1
+│   ├── build-all.sh / .ps1      # Construir imagens Docker
+│   ├── swarm-init.sh / .ps1     # Inicializar Docker Swarm
+│   ├── swarm-deploy.sh / .ps1   # Deploy no Swarm
+│   ├── swarm-status.sh / .ps1   # Status do Swarm
+│   ├── swarm-remove.sh / .ps1   # Remover stack do Swarm
+│   ├── start-all.sh / .ps1      # Modo standalone (sem Swarm)
+│   ├── stop-all.sh / .ps1       # Parar modo standalone
 │   └── logs.sh
+├── docker-stack.yml             # Arquivo de stack do Docker Swarm
 ├── pom.xml                      # POM pai
 └── README.md
 ```
@@ -130,6 +181,7 @@ charger-management-system-java/
 | Migrações | Flyway |
 | Serviços Web | JAX-WS (SOAP) |
 | Cliente HTTP | OpenFeign |
+| Orquestração | **Docker Swarm** |
 | Contêiner | Docker |
 
 ## Endpoints SOAP
@@ -231,14 +283,52 @@ charger-management-system-java/
 
 ## Visualizar Logs
 
+**Docker Swarm:**
 ```bash
-# Ver logs de todos os serviços
+# Ver logs dos serviços
+docker service logs charge-system_charge-manager
+docker service logs charge-system_charge-proxy
+docker service logs charge-system_charge-db
+
+# Ver status dos serviços
+docker stack services charge-system
+docker stack ps charge-system
+```
+
+**Modo Standalone:**
+```bash
 docker logs charge-manager
 docker logs charge-proxy
 docker logs charge-db
+```
 
-# Ou usar o script (Linux/macOS)
-./scripts/logs.sh all
+## Docker Swarm
+
+O projeto utiliza **Docker Swarm** para orquestração dos containers, oferecendo:
+
+- **Overlay Network**: Rede isolada para comunicação entre serviços
+- **Service Discovery**: Serviços se descobrem automaticamente pelo nome
+- **Restart Policies**: Reinicialização automática em caso de falhas
+- **Health Checks**: Verificação de saúde dos containers
+- **Rolling Updates**: Atualizações sem downtime
+
+### Comandos Úteis do Swarm
+
+```bash
+# Ver serviços
+docker stack services charge-system
+
+# Ver tarefas (containers)
+docker stack ps charge-system
+
+# Escalar serviço
+docker service scale charge-system_charge-manager=3
+
+# Ver logs em tempo real
+docker service logs -f charge-system_charge-manager
+
+# Inspecionar serviço
+docker service inspect charge-system_charge-manager
 ```
 
 ## Iterações de Entrega
@@ -248,3 +338,5 @@ docker logs charge-db
 - [x] Rota funcional passando por todas as camadas até o banco de dados
 - [x] CRUD de clientes com arquitetura de 3 camadas
 - [x] Endpoints SOAP (JAX-WS)
+- [x] **Docker Swarm** para orquestração
+

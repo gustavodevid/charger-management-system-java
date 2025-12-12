@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  charge-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: chargedb
+      POSTGRES_USER: chargeuser
+      POSTGRES_PASSWORD: chargepass
+    volumes:
+      - charge-db-data:/var/lib/postgresql/data
+    networks:
+      - charge-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      placement:
+        constraints:
+          - node.role == manager
+
+  # Charge Manager - SOAP Service
+  charge-manager:
+    image: charge-manager:latest
+    environment:
+      DB_HOST: charge-db
+      DB_PORT: 5432
+      DB_NAME: chargedb
+      DB_USER: chargeuser
+      DB_PASSWORD: chargepass
+    ports:
+      - "8080:8080"   # Actuator/HTTP
+      - "8081:8081"   # SOAP endpoint
+    networks:
+      - charge-network
+    depends_on:
+      - charge-db
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 15s
+        max_attempts: 5
+      update_config:
+        parallelism: 1
+        delay: 10s
+
+  # Charge Proxy - SOAP Service
+  charge-proxy:
+    image: charge-proxy:latest
+    environment:
+      ASAAS_API_URL: https://sandbox.asaas.com/api/v3
+      ASAAS_ACCESS_TOKEN: ""
+    ports:
+      - "8082:8082"   # SOAP endpoint
+      - "8083:8081"   # Actuator/HTTP
+    networks:
+      - charge-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+
+networks:
+  charge-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  charge-db-data:
+    driver: local
+
