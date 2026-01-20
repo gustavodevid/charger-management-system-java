@@ -8,6 +8,7 @@ STACK_NAME="charge-system"
 
 echo "=============================================="
 echo "Deploying Charge Management System to Swarm"
+echo "(Jakarta EE / Tomcat)"
 echo "=============================================="
 
 # Get the script directory and project root
@@ -58,13 +59,16 @@ echo "Services:"
 docker stack services $STACK_NAME
 echo ""
 echo "Endpoints:"
-echo "  - Charge Manager WSDL: http://localhost:8081/ws/customer?wsdl"
+echo "  - Charge Manager SOAP: http://localhost:8080/ws/customer"
+echo "  - Charge Manager WSDL: http://localhost:8080/ws/customer?wsdl"
+echo "  - Charge Proxy SOAP:   http://localhost:8082/ws/charge"
 echo "  - Charge Proxy WSDL:   http://localhost:8082/ws/charge?wsdl"
-echo "  - Manager Actuator:    http://localhost:8080/actuator/health"
-echo "  - Proxy Actuator:      http://localhost:8083/actuator/health"
+echo ""
+echo "Health Checks:"
+echo "  - Manager Health: http://localhost:8080/health"
+echo "  - Proxy Health:   http://localhost:8082/health"
 echo ""
 echo "Commands:"
 echo "  - View services: docker stack services $STACK_NAME"
 echo "  - View logs:     docker service logs ${STACK_NAME}_charge-manager"
 echo "  - Remove stack:  ./scripts/swarm-remove.sh"
-

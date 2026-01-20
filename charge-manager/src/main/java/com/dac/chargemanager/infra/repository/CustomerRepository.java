@@ -1,43 +1,27 @@
 package com.dac.chargemanager.infra.repository;
 
 import com.dac.chargemanager.infra.entity.Customer;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.jdbc.support.KeyHolder;
-import org.springframework.stereotype.Repository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.sql.PreparedStatement;
-import java.sql.Statement;
-import java.sql.Timestamp;
+import javax.sql.DataSource;
+import java.sql.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for Customer entity using JDBC Template.
+ * Repository for Customer entity using pure JDBC.
  * Implements data access layer with explicit SQL queries.
  */
-@Repository
 public class CustomerRepository {
 
-    private final JdbcTemplate jdbcTemplate;
+    private static final Logger logger = LoggerFactory.getLogger(CustomerRepository.class);
+    private final DataSource dataSource;
 
-    private static final RowMapper<Customer> CUSTOMER_ROW_MAPPER = (rs, rowNum) -> {
-        Customer customer = new Customer();
-        customer.setId(rs.getLong("id"));
-        customer.setName(rs.getString("name"));
-        customer.setEmail(rs.getString("email"));
-        customer.setCpfCnpj(rs.getString("cpf_cnpj"));
-        customer.setPhone(rs.getString("phone"));
-        customer.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
-        Timestamp updatedAt = rs.getTimestamp("updated_at");
-        customer.setUpdatedAt(updatedAt != null ? updatedAt.toLocalDateTime() : null);
-        return customer;
-    };
-
-    public CustomerRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public CustomerRepository(DataSource dataSource) {
+        this.dataSource = dataSource;
     }
 
     /**
@@ -48,27 +32,39 @@ public class CustomerRepository {
      */
     public Customer save(Customer customer) {
         String sql = "INSERT INTO customer (name, email, cpf_cnpj, phone, created_at) VALUES (?, ?, ?, ?, ?)";
-
-        KeyHolder keyHolder = new GeneratedKeyHolder();
         LocalDateTime now = LocalDateTime.now();
 
-        jdbcTemplate.update(connection -> {
-            PreparedStatement ps = connection.prepareStatement(sql, new String[]{"id"});
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+
             ps.setString(1, customer.getName());
             ps.setString(2, customer.getEmail());
             ps.setString(3, customer.getCpfCnpj());
             ps.setString(4, customer.getPhone());
             ps.setTimestamp(5, Timestamp.valueOf(now));
-            return ps;
-        }, keyHolder);
 
-        Number generatedId = keyHolder.getKey();
-        if (generatedId != null) {
-            customer.setId(generatedId.longValue());
+            int affectedRows = ps.executeUpdate();
+
+            if (affectedRows == 0) {
+                throw new SQLException("Creating customer failed, no rows affected.");
+            }
+
+            try (ResultSet generatedKeys = ps.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    customer.setId(generatedKeys.getLong(1));
+                } else {
+                    throw new SQLException("Creating customer failed, no ID obtained.");
+                }
+            }
+
+            customer.setCreatedAt(now);
+            logger.debug("Customer saved with ID: {}", customer.getId());
+            return customer;
+
+        } catch (SQLException e) {
+            logger.error("Error saving customer", e);
+            throw new RuntimeException("Failed to save customer", e);
         }
-        customer.setCreatedAt(now);
-
-        return customer;
     }
 
     /**
@@ -81,16 +77,25 @@ public class CustomerRepository {
         String sql = "UPDATE customer SET name = ?, email = ?, cpf_cnpj = ?, phone = ?, updated_at = ? WHERE id = ?";
         LocalDateTime now = LocalDateTime.now();
 
-        jdbcTemplate.update(sql,
-                customer.getName(),
-                customer.getEmail(),
-                customer.getCpfCnpj(),
-                customer.getPhone(),
-                Timestamp.valueOf(now),
-                customer.getId());
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
 
-        customer.setUpdatedAt(now);
-        return customer;
+            ps.setString(1, customer.getName());
+            ps.setString(2, customer.getEmail());
+            ps.setString(3, customer.getCpfCnpj());
+            ps.setString(4, customer.getPhone());
+            ps.setTimestamp(5, Timestamp.valueOf(now));
+            ps.setLong(6, customer.getId());
+
+            ps.executeUpdate();
+            customer.setUpdatedAt(now);
+            logger.debug("Customer updated with ID: {}", customer.getId());
+            return customer;
+
+        } catch (SQLException e) {
+            logger.error("Error updating customer", e);
+            throw new RuntimeException("Failed to update customer", e);
+        }
     }
 
     /**
@@ -101,8 +106,24 @@ public class CustomerRepository {
      */
     public Optional<Customer> findById(Long id) {
         String sql = "SELECT * FROM customer WHERE id = ?";
-        List<Customer> customers = jdbcTemplate.query(sql, CUSTOMER_ROW_MAPPER, id);
-        return customers.isEmpty() ? Optional.empty() : Optional.of(customers.get(0));
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setLong(1, id);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(mapRowToCustomer(rs));
+                }
+            }
+
+            return Optional.empty();
+
+        } catch (SQLException e) {
+            logger.error("Error finding customer by ID", e);
+            throw new RuntimeException("Failed to find customer", e);
+        }
     }
 
     /**
@@ -113,8 +134,24 @@ public class CustomerRepository {
      */
     public Optional<Customer> findByEmail(String email) {
         String sql = "SELECT * FROM customer WHERE email = ?";
-        List<Customer> customers = jdbcTemplate.query(sql, CUSTOMER_ROW_MAPPER, email);
-        return customers.isEmpty() ? Optional.empty() : Optional.of(customers.get(0));
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, email);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(mapRowToCustomer(rs));
+                }
+            }
+
+            return Optional.empty();
+
+        } catch (SQLException e) {
+            logger.error("Error finding customer by email", e);
+            throw new RuntimeException("Failed to find customer", e);
+        }
     }
 
     /**
@@ -125,8 +162,24 @@ public class CustomerRepository {
      */
     public Optional<Customer> findByCpfCnpj(String cpfCnpj) {
         String sql = "SELECT * FROM customer WHERE cpf_cnpj = ?";
-        List<Customer> customers = jdbcTemplate.query(sql, CUSTOMER_ROW_MAPPER, cpfCnpj);
-        return customers.isEmpty() ? Optional.empty() : Optional.of(customers.get(0));
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, cpfCnpj);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(mapRowToCustomer(rs));
+                }
+            }
+
+            return Optional.empty();
+
+        } catch (SQLException e) {
+            logger.error("Error finding customer by CPF/CNPJ", e);
+            throw new RuntimeException("Failed to find customer", e);
+        }
     }
 
     /**
@@ -136,7 +189,22 @@ public class CustomerRepository {
      */
     public List<Customer> findAll() {
         String sql = "SELECT * FROM customer ORDER BY id";
-        return jdbcTemplate.query(sql, CUSTOMER_ROW_MAPPER);
+        List<Customer> customers = new ArrayList<>();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                customers.add(mapRowToCustomer(rs));
+            }
+
+            return customers;
+
+        } catch (SQLException e) {
+            logger.error("Error finding all customers", e);
+            throw new RuntimeException("Failed to find customers", e);
+        }
     }
 
     /**
@@ -147,8 +215,19 @@ public class CustomerRepository {
      */
     public boolean deleteById(Long id) {
         String sql = "DELETE FROM customer WHERE id = ?";
-        int rowsAffected = jdbcTemplate.update(sql, id);
-        return rowsAffected > 0;
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setLong(1, id);
+            int rowsAffected = ps.executeUpdate();
+            logger.debug("Customer deleted, rows affected: {}", rowsAffected);
+            return rowsAffected > 0;
+
+        } catch (SQLException e) {
+            logger.error("Error deleting customer", e);
+            throw new RuntimeException("Failed to delete customer", e);
+        }
     }
 
     /**
@@ -159,8 +238,24 @@ public class CustomerRepository {
      */
     public boolean existsById(Long id) {
         String sql = "SELECT COUNT(*) FROM customer WHERE id = ?";
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, id);
-        return count != null && count > 0;
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setLong(1, id);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+
+            return false;
+
+        } catch (SQLException e) {
+            logger.error("Error checking customer existence by ID", e);
+            throw new RuntimeException("Failed to check customer existence", e);
+        }
     }
 
     /**
@@ -171,8 +266,24 @@ public class CustomerRepository {
      */
     public boolean existsByEmail(String email) {
         String sql = "SELECT COUNT(*) FROM customer WHERE email = ?";
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, email);
-        return count != null && count > 0;
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, email);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+
+            return false;
+
+        } catch (SQLException e) {
+            logger.error("Error checking customer existence by email", e);
+            throw new RuntimeException("Failed to check customer existence", e);
+        }
     }
 
     /**
@@ -183,8 +294,39 @@ public class CustomerRepository {
      */
     public boolean existsByCpfCnpj(String cpfCnpj) {
         String sql = "SELECT COUNT(*) FROM customer WHERE cpf_cnpj = ?";
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, cpfCnpj);
-        return count != null && count > 0;
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, cpfCnpj);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+
+            return false;
+
+        } catch (SQLException e) {
+            logger.error("Error checking customer existence by CPF/CNPJ", e);
+            throw new RuntimeException("Failed to check customer existence", e);
+        }
+    }
+
+    /**
+     * Maps a ResultSet row to a Customer entity.
+     */
+    private Customer mapRowToCustomer(ResultSet rs) throws SQLException {
+        Customer customer = new Customer();
+        customer.setId(rs.getLong("id"));
+        customer.setName(rs.getString("name"));
+        customer.setEmail(rs.getString("email"));
+        customer.setCpfCnpj(rs.getString("cpf_cnpj"));
+        customer.setPhone(rs.getString("phone"));
+        customer.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+        Timestamp updatedAt = rs.getTimestamp("updated_at");
+        customer.setUpdatedAt(updatedAt != null ? updatedAt.toLocalDateTime() : null);
+        return customer;
     }
 }
-

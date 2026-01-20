@@ -1,5 +1,5 @@
 # Charge Proxy Dockerfile
-# Multi-stage build for optimized image size
+# Multi-stage build with Tomcat 10.1 (Jakarta EE 10)
 
 # Stage 1: Build
 FROM maven:3.9.5-eclipse-temurin-17 AS build
@@ -19,32 +19,27 @@ RUN mvn dependency:go-offline -pl charge-proxy -am -B
 # Copy source code
 COPY charge-proxy/src ./charge-proxy/src
 
-# Build the application
+# Build the WAR
 RUN mvn clean package -pl charge-proxy -am -DskipTests -B
 
-# Stage 2: Runtime
-FROM eclipse-temurin:17-jre-alpine
+# Stage 2: Runtime with Tomcat
+FROM tomcat:10.1-jdk17-temurin
 
-WORKDIR /app
+# Remove default webapps
+RUN rm -rf /usr/local/tomcat/webapps/*
 
-# Create non-root user for security
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Copy the WAR file
+COPY --from=build /app/charge-proxy/target/charge-proxy.war /usr/local/tomcat/webapps/ROOT.war
 
-# Copy the built jar
-COPY --from=build /app/charge-proxy/target/*.jar app.jar
+# Create logs directory
+RUN mkdir -p /usr/local/tomcat/logs
 
-# Change ownership
-RUN chown -R appuser:appgroup /app
+# Expose port 8080 (Tomcat default)
+EXPOSE 8080
 
-USER appuser
-
-# Expose ports (REST API and SOAP endpoint)
-EXPOSE 8081 8082
-
-# Health check
+# Health check via health servlet
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8081/actuator/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the application
-ENTRYPOINT ["java", "-jar", "app.jar"]
-
+# Run Tomcat
+CMD ["catalina.sh", "run"]

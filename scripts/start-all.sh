@@ -5,7 +5,7 @@
 set -e
 
 echo "=============================================="
-echo "Starting Charge Management System"
+echo "Starting Charge Management System (Jakarta EE)"
 echo "=============================================="
 
 # Configuration
@@ -61,9 +61,9 @@ until docker exec $DB_CONTAINER pg_isready -U $DB_USER -d $DB_NAME >/dev/null 2>
 done
 echo "PostgreSQL is ready!"
 
-# Start Charge Manager
+# Start Charge Manager (Tomcat)
 echo ""
-echo "[3/4] Starting Charge Manager..."
+echo "[3/4] Starting Charge Manager (Tomcat)..."
 if docker ps -a --format '{{.Names}}' | grep -q "^${MANAGER_CONTAINER}$"; then
     docker rm -f $MANAGER_CONTAINER >/dev/null 2>&1
 fi
@@ -77,14 +77,13 @@ docker run -d \
     -e DB_USER=$DB_USER \
     -e DB_PASSWORD=$DB_PASSWORD \
     -p 8080:8080 \
-    -p 8081:8081 \
     charge-manager:latest
 
-echo "Charge Manager started on ports 8080 (HTTP) and 8081 (SOAP)."
+echo "Charge Manager started on port 8080 (Tomcat)."
 
-# Start Charge Proxy
+# Start Charge Proxy (Tomcat)
 echo ""
-echo "[4/4] Starting Charge Proxy..."
+echo "[4/4] Starting Charge Proxy (Tomcat)..."
 if docker ps -a --format '{{.Names}}' | grep -q "^${PROXY_CONTAINER}$"; then
     docker rm -f $PROXY_CONTAINER >/dev/null 2>&1
 fi
@@ -92,16 +91,17 @@ fi
 docker run -d \
     --name $PROXY_CONTAINER \
     --network $NETWORK_NAME \
-    -p 8082:8082 \
-    -p 8083:8081 \
+    -e ASAAS_API_URL=https://sandbox.asaas.com/api/v3 \
+    -e ASAAS_ACCESS_TOKEN="" \
+    -p 8082:8080 \
     charge-proxy:latest
 
-echo "Charge Proxy started on ports 8082 (SOAP) and 8083 (Actuator)."
+echo "Charge Proxy started on port 8082 (Tomcat)."
 
 # Wait for services to be healthy
 echo ""
 echo "Waiting for services to be healthy..."
-sleep 10
+sleep 15
 
 echo ""
 echo "=============================================="
@@ -110,18 +110,17 @@ echo "=============================================="
 echo ""
 echo "Services:"
 echo "  - PostgreSQL:          localhost:5432"
-echo "  - Charge Manager SOAP: http://localhost:8081/ws/customer"
-echo "  - Charge Manager WSDL: http://localhost:8081/ws/customer?wsdl"
+echo "  - Charge Manager SOAP: http://localhost:8080/ws/customer"
+echo "  - Charge Manager WSDL: http://localhost:8080/ws/customer?wsdl"
 echo "  - Charge Proxy SOAP:   http://localhost:8082/ws/charge"
 echo "  - Charge Proxy WSDL:   http://localhost:8082/ws/charge?wsdl"
 echo ""
-echo "Actuator:"
-echo "  - Manager Health: http://localhost:8080/actuator/health"
-echo "  - Proxy Health:   http://localhost:8083/actuator/health"
+echo "Health Checks:"
+echo "  - Manager Health: http://localhost:8080/health"
+echo "  - Proxy Health:   http://localhost:8082/health"
 echo ""
 echo "Container status:"
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "charge-|NAMES"
 echo ""
 echo "To stop the system, run: ./scripts/stop-all.sh"
 echo "To view logs, run: docker logs <container-name>"
-

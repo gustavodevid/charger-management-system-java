@@ -1,6 +1,23 @@
 # Charge Management System
 
-Sistema distribuído de gerenciamento de cobranças com integração ao gateway de pagamento ASAAS, construído com Spring Boot e orquestrado com **Docker Swarm**.
+Sistema distribuído de gerenciamento de cobranças com integração ao gateway de pagamento ASAAS, construído com **Jakarta EE** e orquestrado com **Docker Swarm**.
+
+## Tecnologias
+
+| Categoria | Tecnologia |
+|----------|------------|
+| Linguagem | Java 17 |
+| Framework | Jakarta EE (Servlet 6.0, JAX-WS 4.0) |
+| Servidor | Apache Tomcat 10.1 |
+| Banco de Dados | PostgreSQL 15 |
+| Acesso a Dados | JDBC puro |
+| Connection Pool | HikariCP |
+| Migrações | Flyway |
+| Serviços Web | JAX-WS (SOAP) |
+| Cliente HTTP | Apache HttpClient 5 |
+| Email | Jakarta Mail (Angus Mail) |
+| Orquestração | Docker Swarm |
+| Contêiner | Docker |
 
 ## Como Executar
 
@@ -61,55 +78,44 @@ chmod +x scripts/*.sh
 
 #### Verificar os WSDLs
 
-- **Charge Manager**: http://localhost:8081/ws/customer?wsdl
+- **Charge Manager**: http://localhost:8080/ws/customer?wsdl
 - **Charge Proxy**: http://localhost:8082/ws/charge?wsdl
+
+#### Health Checks
+
+- **Charge Manager**: http://localhost:8080/health
+- **Charge Proxy**: http://localhost:8082/health
 
 #### Testar o Serviço SOAP
 
 **Health Check:**
 ```bash
-curl -X POST "http://localhost:8081/ws/customer" \
+curl -X POST "http://localhost:8080/ws/customer" \
   -H "Content-Type: text/xml" \
   -d '<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:soap="http://chargemanager.dac.com/soap"><soapenv:Body><soap:healthCheck/></soapenv:Body></soapenv:Envelope>'
 ```
 
 **Criar Cliente:**
 ```bash
-curl -X POST "http://localhost:8081/ws/customer" \
+curl -X POST "http://localhost:8080/ws/customer" \
   -H "Content-Type: text/xml" \
   -d '<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:soap="http://chargemanager.dac.com/soap"><soapenv:Body><soap:createCustomer><CustomerRequest><name>João Silva</name><email>joao@example.com</email><cpfCnpj>12345678901</cpfCnpj><phone>11999999999</phone></CustomerRequest></soap:createCustomer></soapenv:Body></soapenv:Envelope>'
-```
-
-#### Verificar Status do Swarm
-
-**Windows (PowerShell):**
-```powershell
-.\scripts\swarm-status.ps1
-```
-
-**Linux/macOS:**
-```bash
-./scripts/swarm-status.sh
 ```
 
 #### Parar o Sistema
 
 **Docker Swarm:**
-```powershell
-# Windows
-.\scripts\swarm-remove.ps1
-
+```bash
 # Linux/macOS
 ./scripts/swarm-remove.sh
 
-# Para também sair do Swarm:
-.\scripts\swarm-remove.ps1 -Leave
-./scripts/swarm-remove.sh --leave
+# Windows
+.\scripts\swarm-remove.ps1
 ```
 
 **Modo Standalone:**
-```powershell
-.\scripts\stop-all.ps1 -Clean
+```bash
+./scripts/stop-all.sh
 ```
 
 ## Arquitetura
@@ -119,7 +125,7 @@ curl -X POST "http://localhost:8081/ws/customer" \
 │                     Docker Swarm Overlay Network                     │
 │  ┌──────────────────┐    ┌──────────────────┐    ┌───────────────┐  │
 │  │  Charge Manager  │    │   Charge Proxy   │    │  PostgreSQL   │  │
-│  │  (Ports 8080/81) │◄──►│ (Ports 8082/83)  │    │  (Port 5432)  │  │
+│  │  (Tomcat:8080)   │◄──►│  (Tomcat:8082)   │    │  (Port 5432)  │  │
 │  │                  │    │                  │    │               │  │
 │  │  ┌───────────┐   │    │  ┌────────────┐  │    │  ┌─────────┐  │  │
 │  │  │   SOAP    │   │    │  │    SOAP    │  │    │  │   DB    │  │  │
@@ -139,56 +145,45 @@ curl -X POST "http://localhost:8081/ws/customer" \
 charger-management-system-java/
 ├── charge-manager/              # Serviço principal (arquitetura 3 camadas)
 │   ├── src/main/java/com/dac/chargemanager/
-│   │   ├── api/                 # Camada API (SOAP)
-│   │   │   ├── soap/            # Endpoints SOAP
-│   │   │   └── config/          # Configurações
+│   │   ├── api/                 # Camada API (SOAP, Servlets)
+│   │   │   ├── soap/            # Endpoints SOAP (JAX-WS)
+│   │   │   └── servlet/         # Health check servlet
 │   │   ├── business/            # Serviços, DTOs, Exceções
-│   │   └── infra/               # Repositórios, Entidades
+│   │   └── infra/               # Repositórios, Entidades, Config
+│   │       ├── config/          # DatabaseConfig, ServiceLocator
+│   │       ├── entity/          # Entidades JPA
+│   │       └── repository/      # Repositórios JDBC
+│   ├── src/main/webapp/WEB-INF/ # Configuração web
+│   │   ├── web.xml              # Configuração Servlet
+│   │   └── sun-jaxws.xml        # Configuração JAX-WS
 │   ├── src/main/resources/
-│   │   ├── application.yml
+│   │   ├── application.properties
+│   │   ├── logback.xml
 │   │   └── db/migration/        # Migrações Flyway
 │   ├── Dockerfile
 │   └── pom.xml
 ├── charge-proxy/                # Serviço proxy SOAP
 │   ├── src/main/java/com/dac/chargeproxy/
 │   │   ├── soap/                # Endpoint JAX-WS SOAP
-│   │   ├── client/              # Cliente ASAAS
-│   │   └── controller/          # Health check REST
+│   │   ├── client/              # Cliente ASAAS (HttpClient)
+│   │   ├── config/              # Configuração e ServiceLocator
+│   │   └── servlet/             # Health check servlet
+│   ├── src/main/webapp/WEB-INF/
+│   │   ├── web.xml
+│   │   └── sun-jaxws.xml
 │   ├── Dockerfile
 │   └── pom.xml
 ├── scripts/                     # Scripts de orquestração Docker
-│   ├── build-all.sh / .ps1      # Construir imagens Docker
-│   ├── swarm-init.sh / .ps1     # Inicializar Docker Swarm
-│   ├── swarm-deploy.sh / .ps1   # Deploy no Swarm
-│   ├── swarm-status.sh / .ps1   # Status do Swarm
-│   ├── swarm-remove.sh / .ps1   # Remover stack do Swarm
-│   ├── start-all.sh / .ps1      # Modo standalone (sem Swarm)
-│   ├── stop-all.sh / .ps1       # Parar modo standalone
-│   └── logs.sh
 ├── docker-stack.yml             # Arquivo de stack do Docker Swarm
 ├── pom.xml                      # POM pai
 └── README.md
 ```
 
-## Tecnologias
-
-| Categoria | Tecnologia |
-|----------|------------|
-| Linguagem | Java 17 |
-| Framework | Spring Boot 3.2 |
-| Banco de Dados | PostgreSQL 15 |
-| Acesso a Dados | Spring JDBC |
-| Migrações | Flyway |
-| Serviços Web | JAX-WS (SOAP) |
-| Cliente HTTP | OpenFeign |
-| Orquestração | **Docker Swarm** |
-| Contêiner | Docker |
-
 ## Endpoints SOAP
 
 ### Charge Manager - Customer Service
 
-**WSDL**: http://localhost:8081/ws/customer?wsdl
+**WSDL**: http://localhost:8080/ws/customer?wsdl
 
 | Operação | Descrição |
 |----------|-----------|
@@ -232,34 +227,6 @@ charger-management-system-java/
 </soapenv:Envelope>
 ```
 
-### Obter Cliente por ID
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" 
-                  xmlns:soap="http://chargemanager.dac.com/soap">
-   <soapenv:Header/>
-   <soapenv:Body>
-      <soap:getCustomer>
-         <customerId>1</customerId>
-      </soap:getCustomer>
-   </soapenv:Body>
-</soapenv:Envelope>
-```
-
-### Listar Todos os Clientes
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" 
-                  xmlns:soap="http://chargemanager.dac.com/soap">
-   <soapenv:Header/>
-   <soapenv:Body>
-      <soap:getAllCustomers/>
-   </soapenv:Body>
-</soapenv:Envelope>
-```
-
 ### Health Check
 
 ```xml
@@ -275,36 +242,15 @@ charger-management-system-java/
 
 ## Contêineres Docker
 
-| Contêiner | Porta(s) | Descrição |
-|-----------|----------|-----------|
+| Contêiner | Porta | Descrição |
+|-----------|-------|-----------|
 | charge-db | 5432 | Banco de dados PostgreSQL |
-| charge-manager | 8080, 8081 | Serviço SOAP (8081) + Actuator (8080) |
-| charge-proxy | 8082, 8083 | Serviço SOAP (8082) + Actuator (8083) |
-
-## Visualizar Logs
-
-**Docker Swarm:**
-```bash
-# Ver logs dos serviços
-docker service logs charge-system_charge-manager
-docker service logs charge-system_charge-proxy
-docker service logs charge-system_charge-db
-
-# Ver status dos serviços
-docker stack services charge-system
-docker stack ps charge-system
-```
-
-**Modo Standalone:**
-```bash
-docker logs charge-manager
-docker logs charge-proxy
-docker logs charge-db
-```
+| charge-manager | 8080 | Tomcat (SOAP + Health) |
+| charge-proxy | 8082 | Tomcat (SOAP + Health) |
 
 ## Docker Swarm
 
-O projeto utiliza **Docker Swarm** para orquestração dos containers, oferecendo:
+O projeto utiliza **Docker Swarm** para orquestração dos containers:
 
 - **Overlay Network**: Rede isolada para comunicação entre serviços
 - **Service Discovery**: Serviços se descobrem automaticamente pelo nome
@@ -338,5 +284,5 @@ docker service inspect charge-system_charge-manager
 - [x] Rota funcional passando por todas as camadas até o banco de dados
 - [x] CRUD de clientes com arquitetura de 3 camadas
 - [x] Endpoints SOAP (JAX-WS)
-- [x] **Docker Swarm** para orquestração
-
+- [x] Docker Swarm para orquestração
+- [x] Jakarta EE puro (sem Spring Boot)

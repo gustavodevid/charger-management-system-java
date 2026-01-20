@@ -1,20 +1,19 @@
 package com.dac.chargeproxy.soap;
 
+import com.dac.chargeproxy.business.ProxyBusinessException;
+import com.dac.chargeproxy.business.ProxyBusinessRules;
 import com.dac.chargeproxy.client.AsaasClient;
+import com.dac.chargeproxy.config.ServiceLocator;
 import com.dac.chargeproxy.soap.model.ChargeRequest;
 import com.dac.chargeproxy.soap.model.ChargeResponse;
 import jakarta.jws.WebService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
-import java.util.UUID;
 
 /**
  * Implementation of the Charge Proxy SOAP service.
- * Currently uses a stub client - will be integrated with ASAAS in iteration 2.
+ * Applies internal business rules before forwarding to ASAAS.
  */
-@Service
 @WebService(
         serviceName = "ChargeProxyService",
         portName = "ChargeProxyPort",
@@ -25,10 +24,28 @@ public class ChargeProxyServiceImpl implements ChargeProxyService {
 
     private static final Logger logger = LoggerFactory.getLogger(ChargeProxyServiceImpl.class);
 
-    private final AsaasClient asaasClient;
+    private AsaasClient asaasClient;
 
+    /**
+     * Default constructor required by JAX-WS.
+     * AsaasClient will be obtained from ServiceLocator.
+     */
+    public ChargeProxyServiceImpl() {
+        // AsaasClient will be lazily initialized from ServiceLocator
+    }
+
+    /**
+     * Constructor for manual dependency injection.
+     */
     public ChargeProxyServiceImpl(AsaasClient asaasClient) {
         this.asaasClient = asaasClient;
+    }
+
+    private AsaasClient getAsaasClient() {
+        if (asaasClient == null) {
+            asaasClient = ServiceLocator.getAsaasClient();
+        }
+        return asaasClient;
     }
 
     @Override
@@ -37,16 +54,24 @@ public class ChargeProxyServiceImpl implements ChargeProxyService {
                 request.getCustomerId(), request.getValue(), request.getBillingType());
 
         try {
-            // Validate billing type
-            if (!isValidBillingType(request.getBillingType())) {
-                return ChargeResponse.error("Invalid billing type. Must be PIX, BOLETO, or CREDIT_CARD");
-            }
+            // Apply business rules validation
+            ProxyBusinessRules.validateChargeRequest(request);
 
             // Call ASAAS client (stub implementation for now)
-            ChargeResponse response = asaasClient.createCharge(request);
+            ChargeResponse response = getAsaasClient().createCharge(request);
+
+            // Map ASAAS status to internal status
+            if (response.isSuccess() && response.getStatus() != null) {
+                String internalStatus = ProxyBusinessRules.mapAsaasStatusToInternal(response.getStatus());
+                response.setStatus(internalStatus);
+            }
 
             logger.info("Charge created successfully: {}", response.getChargeId());
             return response;
+
+        } catch (ProxyBusinessException e) {
+            logger.warn("Business rule validation failed: {} - {}", e.getErrorCode(), e.getMessage());
+            return ChargeResponse.error("[" + e.getErrorCode() + "] " + e.getMessage());
 
         } catch (Exception e) {
             logger.error("Error creating charge: ", e);
@@ -59,7 +84,18 @@ public class ChargeProxyServiceImpl implements ChargeProxyService {
         logger.info("Getting charge: {}", chargeId);
 
         try {
-            ChargeResponse response = asaasClient.getCharge(chargeId);
+            if (chargeId == null || chargeId.trim().isEmpty()) {
+                return ChargeResponse.error("[INVALID_CHARGE_ID] Charge ID is required");
+            }
+
+            ChargeResponse response = getAsaasClient().getCharge(chargeId);
+
+            // Map ASAAS status to internal status
+            if (response.isSuccess() && response.getStatus() != null) {
+                String internalStatus = ProxyBusinessRules.mapAsaasStatusToInternal(response.getStatus());
+                response.setStatus(internalStatus);
+            }
+
             logger.info("Charge retrieved: {}", chargeId);
             return response;
 
@@ -74,7 +110,18 @@ public class ChargeProxyServiceImpl implements ChargeProxyService {
         logger.info("Cancelling charge: {}", chargeId);
 
         try {
-            ChargeResponse response = asaasClient.cancelCharge(chargeId);
+            if (chargeId == null || chargeId.trim().isEmpty()) {
+                return ChargeResponse.error("[INVALID_CHARGE_ID] Charge ID is required");
+            }
+
+            ChargeResponse response = getAsaasClient().cancelCharge(chargeId);
+
+            // Map ASAAS status to internal status
+            if (response.isSuccess() && response.getStatus() != null) {
+                String internalStatus = ProxyBusinessRules.mapAsaasStatusToInternal(response.getStatus());
+                response.setStatus(internalStatus);
+            }
+
             logger.info("Charge cancelled: {}", chargeId);
             return response;
 
@@ -89,11 +136,4 @@ public class ChargeProxyServiceImpl implements ChargeProxyService {
         logger.debug("Health check called");
         return "Charge Proxy Service is UP - " + java.time.LocalDateTime.now();
     }
-
-    private boolean isValidBillingType(String billingType) {
-        return "PIX".equalsIgnoreCase(billingType) ||
-               "BOLETO".equalsIgnoreCase(billingType) ||
-               "CREDIT_CARD".equalsIgnoreCase(billingType);
-    }
 }
-

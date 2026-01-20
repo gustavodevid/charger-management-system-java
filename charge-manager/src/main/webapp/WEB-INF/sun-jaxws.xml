@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<endpoints xmlns="http://java.sun.com/xml/ns/jax-ws/ri/runtime"
+           version="2.0">
+
+    <!-- Customer SOAP Service Endpoint -->
+    <endpoint name="CustomerService"
+              implementation="com.dac.chargemanager.api.soap.CustomerSoapServiceImpl"
+              url-pattern="/ws/customer"/>
+
+    <!-- Charge SOAP Service Endpoint -->
+    <endpoint name="ChargeService"
+              implementation="com.dac.chargemanager.api.soap.ChargeSoapServiceImpl"
+              url-pattern="/ws/charge"/>
+
+</endpoints>

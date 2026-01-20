@@ -1,9 +1,5 @@
 package com.dac.chargemanager.business.dto;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-
 import java.time.LocalDateTime;
 
 /**
@@ -12,22 +8,10 @@ import java.time.LocalDateTime;
 public class CustomerDTO {
 
     private Long id;
-
-    @NotBlank(message = "Name is required")
-    @Size(min = 2, max = 100, message = "Name must be between 2 and 100 characters")
     private String name;
-
-    @NotBlank(message = "Email is required")
-    @Email(message = "Invalid email format")
     private String email;
-
-    @NotBlank(message = "CPF/CNPJ is required")
-    @Size(min = 11, max = 14, message = "CPF/CNPJ must be between 11 and 14 characters")
     private String cpfCnpj;
-
-    @Size(max = 20, message = "Phone must be at most 20 characters")
     private String phone;
-
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -101,4 +85,3 @@ public class CustomerDTO {
         this.updatedAt = updatedAt;
     }
 }
-

@@ -7,17 +7,14 @@ import com.dac.chargemanager.infra.entity.Customer;
 import com.dac.chargemanager.infra.repository.CustomerRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * Service layer for Customer business logic.
- * Implements explicit transaction control.
+ * Implements business rules and validation.
  */
-@Service
 public class CustomerService {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomerService.class);
@@ -35,7 +32,6 @@ public class CustomerService {
      * @return the created customer
      * @throws BusinessException if validation fails
      */
-    @Transactional
     public CustomerDTO createCustomer(CustomerDTO dto) {
         logger.info("Creating customer with email: {}", dto.getEmail());
 
@@ -65,7 +61,6 @@ public class CustomerService {
      * @throws ResourceNotFoundException if customer not found
      * @throws BusinessException         if validation fails
      */
-    @Transactional
     public CustomerDTO updateCustomer(Long id, CustomerDTO dto) {
         logger.info("Updating customer with id: {}", id);
 
@@ -102,7 +97,6 @@ public class CustomerService {
      * @return the customer
      * @throws ResourceNotFoundException if customer not found
      */
-    @Transactional(readOnly = true)
     public CustomerDTO getCustomerById(Long id) {
         logger.debug("Fetching customer with id: {}", id);
 
@@ -117,7 +111,6 @@ public class CustomerService {
      *
      * @return list of all customers
      */
-    @Transactional(readOnly = true)
     public List<CustomerDTO> getAllCustomers() {
         logger.debug("Fetching all customers");
 
@@ -133,7 +126,6 @@ public class CustomerService {
      * @param id the customer ID
      * @throws ResourceNotFoundException if customer not found
      */
-    @Transactional
     public void deleteCustomer(Long id) {
         logger.info("Deleting customer with id: {}", id);
 
@@ -173,4 +165,3 @@ public class CustomerService {
         return customer;
     }
 }
-

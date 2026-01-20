@@ -22,7 +22,7 @@ services:
         constraints:
           - node.role == manager
 
-  # Charge Manager - SOAP Service
+  # Charge Manager - SOAP Service (Tomcat)
   charge-manager:
     image: charge-manager:latest
     environment:
@@ -31,15 +31,23 @@ services:
       DB_NAME: chargedb
       DB_USER: chargeuser
       DB_PASSWORD: chargepass
+      CHARGE_PROXY_HOST: charge-proxy
+      CHARGE_PROXY_PORT: 8080
+      # Mail Configuration (optional)
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 587
+      MAIL_USERNAME: ""
+      MAIL_PASSWORD: ""
+      MAIL_FROM_ADDRESS: "noreply@chargemanager.com"
+      MAIL_FROM_NAME: "Charge Manager"
     ports:
-      - "8080:8080"   # Actuator/HTTP
-      - "8081:8081"   # SOAP endpoint
+      - "8080:8080"   # Tomcat (SOAP + Health)
     networks:
       - charge-network
     depends_on:
       - charge-db
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/charge-manager/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -54,17 +62,26 @@ services:
         parallelism: 1
         delay: 10s
 
-  # Charge Proxy - SOAP Service
+  # Charge Proxy - SOAP Service (Tomcat)
   charge-proxy:
     image: charge-proxy:latest
     environment:
       ASAAS_API_URL: https://sandbox.asaas.com/api/v3
-      ASAAS_ACCESS_TOKEN: ""
+      ASAAS_ACCESS_TOKEN: "$aact_hmlg_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjMxOTBlNzdjLTlkNWEtNDJmMi05ZmFjLTJmYzM0YWFjZDM2MDo6JGFhY2hfNGY2YWRjNWYtZTIzOC00YjIyLTg3YjQtZDZhN2Y0OTFhNjU1"
+      ASAAS_API_MODE: "REAL"
+      CHARGE_MANAGER_HOST: charge-manager
+      CHARGE_MANAGER_PORT: 8080
+      WEBHOOK_AUTH_TOKEN: ""
     ports:
-      - "8082:8082"   # SOAP endpoint
-      - "8083:8081"   # Actuator/HTTP
+      - "8082:8080"   # Tomcat (SOAP + Health + Webhook)
     networks:
       - charge-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/charge-proxy/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       replicas: 1
       restart_policy:
@@ -83,4 +100,3 @@ networks:
 volumes:
   charge-db-data:
     driver: local
-
