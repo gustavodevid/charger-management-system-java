@@ -25,6 +25,9 @@ RUN mvn clean package -pl charge-manager -am -DskipTests -B
 # Stage 2: Runtime with Tomcat
 FROM tomcat:10.1-jdk17-temurin
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # Remove default webapps
 RUN rm -rf /usr/local/tomcat/webapps/*
 

@@ -3,6 +3,8 @@ package com.dac.chargemanager.infra.repository;
 import com.dac.chargemanager.infra.entity.Customer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
 import java.sql.*;
@@ -14,28 +16,33 @@ import java.util.Optional;
 /**
  * Repository for Customer entity using pure JDBC.
  * Implements data access layer with explicit SQL queries.
+ * Supports explicit transaction management by accepting Connection parameter.
  */
+@Repository
 public class CustomerRepository {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomerRepository.class);
     private final DataSource dataSource;
 
+    @Autowired
     public CustomerRepository(DataSource dataSource) {
         this.dataSource = dataSource;
     }
 
+    // ==================== METHODS WITH CONNECTION PARAMETER ====================
+
     /**
-     * Creates a new customer in the database.
+     * Creates a new customer in the database using provided connection.
      *
      * @param customer the customer to create
+     * @param conn the database connection (caller manages transaction)
      * @return the created customer with generated ID
      */
-    public Customer save(Customer customer) {
+    public Customer save(Customer customer, Connection conn) {
         String sql = "INSERT INTO customer (name, email, cpf_cnpj, phone, created_at) VALUES (?, ?, ?, ?, ?)";
         LocalDateTime now = LocalDateTime.now();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             ps.setString(1, customer.getName());
             ps.setString(2, customer.getEmail());
@@ -68,17 +75,17 @@ public class CustomerRepository {
     }
 
     /**
-     * Updates an existing customer.
+     * Updates an existing customer using provided connection.
      *
      * @param customer the customer to update
+     * @param conn the database connection (caller manages transaction)
      * @return the updated customer
      */
-    public Customer update(Customer customer) {
+    public Customer update(Customer customer, Connection conn) {
         String sql = "UPDATE customer SET name = ?, email = ?, cpf_cnpj = ?, phone = ?, updated_at = ? WHERE id = ?";
         LocalDateTime now = LocalDateTime.now();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, customer.getName());
             ps.setString(2, customer.getEmail());
@@ -99,16 +106,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Finds a customer by ID.
+     * Finds a customer by ID using provided connection.
      *
      * @param id the customer ID
+     * @param conn the database connection (caller manages transaction)
      * @return optional containing the customer if found
      */
-    public Optional<Customer> findById(Long id) {
+    public Optional<Customer> findById(Long id, Connection conn) {
         String sql = "SELECT * FROM customer WHERE id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, id);
 
@@ -127,16 +134,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Finds a customer by email.
+     * Finds a customer by email using provided connection.
      *
      * @param email the customer email
+     * @param conn the database connection (caller manages transaction)
      * @return optional containing the customer if found
      */
-    public Optional<Customer> findByEmail(String email) {
+    public Optional<Customer> findByEmail(String email, Connection conn) {
         String sql = "SELECT * FROM customer WHERE email = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, email);
 
@@ -155,16 +162,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Finds a customer by CPF/CNPJ.
+     * Finds a customer by CPF/CNPJ using provided connection.
      *
      * @param cpfCnpj the customer CPF or CNPJ
+     * @param conn the database connection (caller manages transaction)
      * @return optional containing the customer if found
      */
-    public Optional<Customer> findByCpfCnpj(String cpfCnpj) {
+    public Optional<Customer> findByCpfCnpj(String cpfCnpj, Connection conn) {
         String sql = "SELECT * FROM customer WHERE cpf_cnpj = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, cpfCnpj);
 
@@ -183,16 +190,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Returns all customers.
+     * Returns all customers using provided connection.
      *
+     * @param conn the database connection (caller manages transaction)
      * @return list of all customers
      */
-    public List<Customer> findAll() {
+    public List<Customer> findAll(Connection conn) {
         String sql = "SELECT * FROM customer ORDER BY id";
         List<Customer> customers = new ArrayList<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
+        try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
@@ -208,16 +215,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Deletes a customer by ID.
+     * Deletes a customer by ID using provided connection.
      *
      * @param id the customer ID
+     * @param conn the database connection (caller manages transaction)
      * @return true if deleted, false otherwise
      */
-    public boolean deleteById(Long id) {
+    public boolean deleteById(Long id, Connection conn) {
         String sql = "DELETE FROM customer WHERE id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, id);
             int rowsAffected = ps.executeUpdate();
@@ -231,16 +238,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Checks if a customer exists by ID.
+     * Checks if a customer exists by ID using provided connection.
      *
      * @param id the customer ID
+     * @param conn the database connection (caller manages transaction)
      * @return true if exists, false otherwise
      */
-    public boolean existsById(Long id) {
+    public boolean existsById(Long id, Connection conn) {
         String sql = "SELECT COUNT(*) FROM customer WHERE id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, id);
 
@@ -259,16 +266,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Checks if a customer exists by email.
+     * Checks if a customer exists by email using provided connection.
      *
      * @param email the customer email
+     * @param conn the database connection (caller manages transaction)
      * @return true if exists, false otherwise
      */
-    public boolean existsByEmail(String email) {
+    public boolean existsByEmail(String email, Connection conn) {
         String sql = "SELECT COUNT(*) FROM customer WHERE email = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, email);
 
@@ -287,16 +294,16 @@ public class CustomerRepository {
     }
 
     /**
-     * Checks if a customer exists by CPF/CNPJ.
+     * Checks if a customer exists by CPF/CNPJ using provided connection.
      *
      * @param cpfCnpj the customer CPF or CNPJ
+     * @param conn the database connection (caller manages transaction)
      * @return true if exists, false otherwise
      */
-    public boolean existsByCpfCnpj(String cpfCnpj) {
+    public boolean existsByCpfCnpj(String cpfCnpj, Connection conn) {
         String sql = "SELECT COUNT(*) FROM customer WHERE cpf_cnpj = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, cpfCnpj);
 
@@ -311,6 +318,167 @@ public class CustomerRepository {
         } catch (SQLException e) {
             logger.error("Error checking customer existence by CPF/CNPJ", e);
             throw new RuntimeException("Failed to check customer existence", e);
+        }
+    }
+
+    // ==================== CONVENIENCE METHODS (AUTO-MANAGED CONNECTION) ====================
+
+    /**
+     * Creates a new customer in the database.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param customer the customer to create
+     * @return the created customer with generated ID
+     */
+    public Customer save(Customer customer) {
+        try (Connection conn = dataSource.getConnection()) {
+            return save(customer, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Updates an existing customer.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param customer the customer to update
+     * @return the updated customer
+     */
+    public Customer update(Customer customer) {
+        try (Connection conn = dataSource.getConnection()) {
+            return update(customer, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Finds a customer by ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param id the customer ID
+     * @return optional containing the customer if found
+     */
+    public Optional<Customer> findById(Long id) {
+        try (Connection conn = dataSource.getConnection()) {
+            return findById(id, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Finds a customer by email.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param email the customer email
+     * @return optional containing the customer if found
+     */
+    public Optional<Customer> findByEmail(String email) {
+        try (Connection conn = dataSource.getConnection()) {
+            return findByEmail(email, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Finds a customer by CPF/CNPJ.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param cpfCnpj the customer CPF or CNPJ
+     * @return optional containing the customer if found
+     */
+    public Optional<Customer> findByCpfCnpj(String cpfCnpj) {
+        try (Connection conn = dataSource.getConnection()) {
+            return findByCpfCnpj(cpfCnpj, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Returns all customers.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @return list of all customers
+     */
+    public List<Customer> findAll() {
+        try (Connection conn = dataSource.getConnection()) {
+            return findAll(conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Deletes a customer by ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param id the customer ID
+     * @return true if deleted, false otherwise
+     */
+    public boolean deleteById(Long id) {
+        try (Connection conn = dataSource.getConnection()) {
+            return deleteById(id, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Checks if a customer exists by ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param id the customer ID
+     * @return true if exists, false otherwise
+     */
+    public boolean existsById(Long id) {
+        try (Connection conn = dataSource.getConnection()) {
+            return existsById(id, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Checks if a customer exists by email.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param email the customer email
+     * @return true if exists, false otherwise
+     */
+    public boolean existsByEmail(String email) {
+        try (Connection conn = dataSource.getConnection()) {
+            return existsByEmail(email, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Checks if a customer exists by CPF/CNPJ.
+     * Uses auto-managed connection (auto-commit enabled).
+     *
+     * @param cpfCnpj the customer CPF or CNPJ
+     * @return true if exists, false otherwise
+     */
+    public boolean existsByCpfCnpj(String cpfCnpj) {
+        try (Connection conn = dataSource.getConnection()) {
+            return existsByCpfCnpj(cpfCnpj, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
         }
     }
 

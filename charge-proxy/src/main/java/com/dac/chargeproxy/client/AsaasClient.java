@@ -1,82 +1,48 @@
 package com.dac.chargeproxy.client;
 
-import com.dac.chargeproxy.business.ProxyBusinessRules;
-import com.dac.chargeproxy.client.dto.AsaasErrorResponse;
 import com.dac.chargeproxy.client.dto.AsaasPaymentRequest;
 import com.dac.chargeproxy.client.dto.AsaasPaymentResponse;
 import com.dac.chargeproxy.client.dto.AsaasPixQrCodeResponse;
 import com.dac.chargeproxy.soap.model.ChargeRequest;
 import com.dac.chargeproxy.soap.model.ChargeResponse;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.hc.client5.http.classic.methods.HttpDelete;
-import org.apache.hc.client5.http.classic.methods.HttpGet;
-import org.apache.hc.client5.http.classic.methods.HttpPost;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.core5.http.ContentType;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
-import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
 import java.math.BigDecimal;
 import java.util.Map;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Client for ASAAS API integration using Apache HttpClient 5.
+ * Client for ASAAS API integration using OpenFeign.
  * 
  * Supports two modes:
- * - REAL: Makes actual HTTP calls to ASAAS API
+ * - REAL: Uses OpenFeign client to make actual HTTP calls to ASAAS API
  * - STUB: Uses in-memory storage for testing
  * 
  * The mode is determined by the 'mode' constructor parameter.
  */
-public class AsaasClient implements Closeable {
+public class AsaasClient {
 
     private static final Logger logger = LoggerFactory.getLogger(AsaasClient.class);
 
-    private static final String USER_AGENT = "ChargeManagementSystem/1.0";
-    private static final String PAYMENTS_ENDPOINT = "/payments";
-
-    private final String baseUrl;
-    private final String accessToken;
+    private final AsaasFeignClient feignClient;
     private final boolean useRealApi;
-    private final CloseableHttpClient httpClient;
-    private final ObjectMapper objectMapper;
-    private final Random random;
 
     // In-memory storage for STUB mode
     private final Map<String, StubChargeData> chargeStorage = new ConcurrentHashMap<>();
 
     /**
-     * Creates an AsaasClient with the specified mode.
+     * Creates an AsaasClient with the OpenFeign client.
      * 
-     * @param baseUrl the base URL of the ASAAS API
-     * @param accessToken the API access token
+     * @param feignClient the OpenFeign client for ASAAS API
      * @param mode the operation mode: "REAL" for actual API calls, "STUB" for testing
      */
-    public AsaasClient(String baseUrl, String accessToken, String mode) {
-        this.baseUrl = baseUrl;
-        this.accessToken = accessToken;
+    public AsaasClient(AsaasFeignClient feignClient, String mode) {
+        this.feignClient = feignClient;
         this.useRealApi = "REAL".equalsIgnoreCase(mode);
-        this.httpClient = HttpClients.createDefault();
-        this.objectMapper = new ObjectMapper()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        this.random = new Random();
 
-        logger.info("AsaasClient initialized - baseUrl: {}, mode: {}", baseUrl, useRealApi ? "REAL" : "STUB");
-    }
-
-    /**
-     * Creates an AsaasClient in REAL mode (default).
-     */
-    public AsaasClient(String baseUrl, String accessToken) {
-        this(baseUrl, accessToken, "REAL");
+        logger.info("AsaasClient initialized - mode: {}", useRealApi ? "REAL (OpenFeign)" : "STUB");
     }
 
     /**
@@ -121,10 +87,10 @@ public class AsaasClient implements Closeable {
         }
     }
 
-    // ========== REAL API IMPLEMENTATION ==========
+    // ========== REAL API IMPLEMENTATION (OpenFeign) ==========
 
     private ChargeResponse createChargeReal(ChargeRequest request) {
-        logger.info("Creating charge in ASAAS API for customer: {}", request.getCustomerId());
+        logger.info("Creating charge in ASAAS API (OpenFeign) for customer: {}", request.getCustomerId());
 
         try {
             // Build ASAAS request
@@ -136,29 +102,24 @@ public class AsaasClient implements Closeable {
                     .description(request.getDescription())
                     .build();
 
-            String requestBody = objectMapper.writeValueAsString(asaasRequest);
-            logger.debug("ASAAS request body: {}", requestBody);
+            // Make API call using Feign
+            AsaasPaymentResponse asaasResponse = feignClient.createPayment(asaasRequest);
+            
+            logger.info("Charge created successfully - ID: {}, Status: {}", 
+                    asaasResponse.getId(), asaasResponse.getStatus());
 
-            // Make HTTP POST request
-            HttpPost httpPost = new HttpPost(baseUrl + PAYMENTS_ENDPOINT);
-            httpPost.setHeader("Content-Type", "application/json");
-            httpPost.setHeader("access_token", accessToken);
-            httpPost.setHeader("User-Agent", USER_AGENT);
-            httpPost.setEntity(new StringEntity(requestBody, ContentType.APPLICATION_JSON));
+            ChargeResponse chargeResponse = mapAsaasResponseToChargeResponse(asaasResponse);
+            
+            // Fetch PIX QR Code if applicable
+            if ("PIX".equalsIgnoreCase(asaasResponse.getBillingType()) && asaasResponse.getId() != null) {
+                fetchAndSetPixQrCode(asaasResponse.getId(), chargeResponse);
+            }
+            
+            return chargeResponse;
 
-            return httpClient.execute(httpPost, response -> {
-                int statusCode = response.getCode();
-                String responseBody = EntityUtils.toString(response.getEntity());
-                logger.debug("ASAAS response: {} - {}", statusCode, responseBody);
-
-                if (statusCode >= 200 && statusCode < 300) {
-                    AsaasPaymentResponse asaasResponse = objectMapper.readValue(responseBody, AsaasPaymentResponse.class);
-                    return mapAsaasResponseToChargeResponse(asaasResponse);
-                } else {
-                    return handleAsaasError(statusCode, responseBody);
-                }
-            });
-
+        } catch (AsaasErrorDecoder.AsaasApiException e) {
+            logger.error("ASAAS API error creating charge: {}", e.getMessage());
+            return handleAsaasError(e);
         } catch (Exception e) {
             logger.error("Error creating charge in ASAAS: ", e);
             return ChargeResponse.error("Failed to create charge: " + e.getMessage());
@@ -166,33 +127,23 @@ public class AsaasClient implements Closeable {
     }
 
     private ChargeResponse getChargeReal(String chargeId) {
-        logger.info("Getting charge from ASAAS API: {}", chargeId);
+        logger.info("Getting charge from ASAAS API (OpenFeign): {}", chargeId);
 
         try {
-            HttpGet httpGet = new HttpGet(baseUrl + PAYMENTS_ENDPOINT + "/" + chargeId);
-            httpGet.setHeader("access_token", accessToken);
-            httpGet.setHeader("User-Agent", USER_AGENT);
+            AsaasPaymentResponse asaasResponse = feignClient.getPayment(chargeId);
+            
+            ChargeResponse chargeResponse = mapAsaasResponseToChargeResponse(asaasResponse);
+            
+            // Fetch PIX QR Code if applicable
+            if ("PIX".equalsIgnoreCase(asaasResponse.getBillingType()) && asaasResponse.getId() != null) {
+                fetchAndSetPixQrCode(asaasResponse.getId(), chargeResponse);
+            }
+            
+            return chargeResponse;
 
-            return httpClient.execute(httpGet, response -> {
-                int statusCode = response.getCode();
-                String responseBody = EntityUtils.toString(response.getEntity());
-                logger.debug("ASAAS response: {} - {}", statusCode, responseBody);
-
-                if (statusCode >= 200 && statusCode < 300) {
-                    AsaasPaymentResponse asaasResponse = objectMapper.readValue(responseBody, AsaasPaymentResponse.class);
-                    ChargeResponse chargeResponse = mapAsaasResponseToChargeResponse(asaasResponse);
-                    
-                    // If it's a PIX payment, try to get the QR Code
-                    if ("PIX".equalsIgnoreCase(asaasResponse.getBillingType()) && asaasResponse.getId() != null) {
-                        fetchAndSetPixQrCode(asaasResponse.getId(), chargeResponse);
-                    }
-                    
-                    return chargeResponse;
-                } else {
-                    return handleAsaasError(statusCode, responseBody);
-                }
-            });
-
+        } catch (AsaasErrorDecoder.AsaasApiException e) {
+            logger.error("ASAAS API error getting charge: {}", e.getMessage());
+            return handleAsaasError(e);
         } catch (Exception e) {
             logger.error("Error getting charge from ASAAS: ", e);
             return ChargeResponse.error("Failed to get charge: " + e.getMessage());
@@ -200,26 +151,15 @@ public class AsaasClient implements Closeable {
     }
 
     private ChargeResponse cancelChargeReal(String chargeId) {
-        logger.info("Cancelling charge in ASAAS API: {}", chargeId);
+        logger.info("Cancelling charge in ASAAS API (OpenFeign): {}", chargeId);
 
         try {
-            HttpDelete httpDelete = new HttpDelete(baseUrl + PAYMENTS_ENDPOINT + "/" + chargeId);
-            httpDelete.setHeader("access_token", accessToken);
-            httpDelete.setHeader("User-Agent", USER_AGENT);
+            AsaasPaymentResponse asaasResponse = feignClient.deletePayment(chargeId);
+            return mapAsaasResponseToChargeResponse(asaasResponse);
 
-            return httpClient.execute(httpDelete, response -> {
-                int statusCode = response.getCode();
-                String responseBody = EntityUtils.toString(response.getEntity());
-                logger.debug("ASAAS response: {} - {}", statusCode, responseBody);
-
-                if (statusCode >= 200 && statusCode < 300) {
-                    AsaasPaymentResponse asaasResponse = objectMapper.readValue(responseBody, AsaasPaymentResponse.class);
-                    return mapAsaasResponseToChargeResponse(asaasResponse);
-                } else {
-                    return handleAsaasError(statusCode, responseBody);
-                }
-            });
-
+        } catch (AsaasErrorDecoder.AsaasApiException e) {
+            logger.error("ASAAS API error cancelling charge: {}", e.getMessage());
+            return handleAsaasError(e);
         } catch (Exception e) {
             logger.error("Error cancelling charge in ASAAS: ", e);
             return ChargeResponse.error("Failed to cancel charge: " + e.getMessage());
@@ -231,21 +171,11 @@ public class AsaasClient implements Closeable {
      */
     private void fetchAndSetPixQrCode(String paymentId, ChargeResponse response) {
         try {
-            HttpGet httpGet = new HttpGet(baseUrl + PAYMENTS_ENDPOINT + "/" + paymentId + "/pixQrCode");
-            httpGet.setHeader("access_token", accessToken);
-            httpGet.setHeader("User-Agent", USER_AGENT);
-
-            httpClient.execute(httpGet, pixResponse -> {
-                int statusCode = pixResponse.getCode();
-                if (statusCode >= 200 && statusCode < 300) {
-                    String pixBody = EntityUtils.toString(pixResponse.getEntity());
-                    AsaasPixQrCodeResponse qrCode = objectMapper.readValue(pixBody, AsaasPixQrCodeResponse.class);
-                    if (qrCode.getPayload() != null) {
-                        response.setPixCode(qrCode.getPayload());
-                    }
-                }
-                return null;
-            });
+            AsaasPixQrCodeResponse qrCode = feignClient.getPixQrCode(paymentId);
+            if (qrCode != null && qrCode.getPayload() != null) {
+                response.setPixCode(qrCode.getPayload());
+                logger.debug("PIX QR Code fetched for payment: {}", paymentId);
+            }
         } catch (Exception e) {
             logger.warn("Could not fetch PIX QR Code for payment {}: {}", paymentId, e.getMessage());
         }
@@ -278,27 +208,19 @@ public class AsaasClient implements Closeable {
     }
 
     /**
-     * Handles ASAAS API errors.
+     * Handles ASAAS API errors and converts to ChargeResponse.
      */
-    private ChargeResponse handleAsaasError(int statusCode, String responseBody) {
-        String errorMessage;
-
-        try {
-            AsaasErrorResponse errorResponse = objectMapper.readValue(responseBody, AsaasErrorResponse.class);
-            errorMessage = errorResponse.getFormattedMessage();
-        } catch (Exception e) {
-            errorMessage = "HTTP " + statusCode + ": " + responseBody;
+    private ChargeResponse handleAsaasError(AsaasErrorDecoder.AsaasApiException e) {
+        if (e.isValidationError()) {
+            return ChargeResponse.error("[VALIDATION_ERROR] " + e.getMessage());
+        } else if (e.isAuthError()) {
+            return ChargeResponse.error("[AUTH_ERROR] Invalid or expired access token");
+        } else if (e.isNotFound()) {
+            return ChargeResponse.error("[NOT_FOUND] Charge not found");
+        } else if (e.isServerError()) {
+            return ChargeResponse.error("[ASAAS_ERROR] Internal server error at ASAAS");
         }
-
-        logger.error("ASAAS API error: {} - {}", statusCode, errorMessage);
-
-        return switch (statusCode) {
-            case 400 -> ChargeResponse.error("[VALIDATION_ERROR] " + errorMessage);
-            case 401 -> ChargeResponse.error("[AUTH_ERROR] Invalid or expired access token");
-            case 404 -> ChargeResponse.error("[NOT_FOUND] Charge not found");
-            case 500 -> ChargeResponse.error("[ASAAS_ERROR] Internal server error at ASAAS");
-            default -> ChargeResponse.error("[ERROR] " + errorMessage);
-        };
+        return ChargeResponse.error("[ERROR] " + e.getMessage());
     }
 
     // ========== STUB IMPLEMENTATION (for testing) ==========
@@ -408,17 +330,5 @@ public class AsaasClient implements Closeable {
      */
     public boolean isRealApiMode() {
         return useRealApi;
-    }
-
-    @Override
-    public void close() {
-        try {
-            if (httpClient != null) {
-                httpClient.close();
-                logger.info("AsaasClient HTTP client closed");
-            }
-        } catch (Exception e) {
-            logger.warn("Error closing HTTP client: {}", e.getMessage());
-        }
     }
 }

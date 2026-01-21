@@ -1,19 +1,19 @@
 # Charge Management System
 
-Sistema distribuído de gerenciamento de cobranças com integração ao gateway de pagamento ASAAS, construído com **Jakarta EE** e orquestrado com **Docker Swarm**.
+Sistema distribuído de gerenciamento de cobranças com integração ao gateway de pagamento ASAAS, construído com **Spring Framework** e orquestrado com **Docker Swarm**.
 
 ## Tecnologias
 
 | Categoria | Tecnologia |
 |----------|------------|
 | Linguagem | Java 17 |
-| Framework | Jakarta EE (Servlet 6.0, JAX-WS 4.0) |
+| Framework | Spring Framework 6.1 |
 | Servidor | Apache Tomcat 10.1 |
 | Banco de Dados | PostgreSQL 15 |
-| Acesso a Dados | JDBC puro |
+| Acesso a Dados | JDBC + Spring JDBC |
 | Connection Pool | HikariCP |
 | Migrações | Flyway |
-| Serviços Web | JAX-WS (SOAP) |
+| Serviços Web | JAX-WS (SOAP) + Spring Integration |
 | Cliente HTTP | Apache HttpClient 5 |
 | Email | Jakarta Mail (Angus Mail) |
 | Orquestração | Docker Swarm |
@@ -78,7 +78,8 @@ chmod +x scripts/*.sh
 
 #### Verificar os WSDLs
 
-- **Charge Manager**: http://localhost:8080/ws/customer?wsdl
+- **Charge Manager (Customer)**: http://localhost:8080/ws/customer?wsdl
+- **Charge Manager (Charge)**: http://localhost:8080/ws/charge?wsdl
 - **Charge Proxy**: http://localhost:8082/ws/charge?wsdl
 
 #### Health Checks
@@ -139,6 +140,35 @@ curl -X POST "http://localhost:8080/ws/customer" \
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+## Spring Framework
+
+O projeto utiliza **Spring Framework** (não Spring Boot) para:
+
+- **Injeção de Dependência**: `@Component`, `@Service`, `@Repository`, `@Autowired`
+- **Configuração**: Classes `@Configuration` com `@Bean` methods
+- **Gerenciamento de Transações**: `@EnableTransactionManagement`
+- **Eventos**: `ChargeEventPublisher` com listeners Spring
+- **Integração JAX-WS**: `SpringBeanAutowiringSupport` para injeção em endpoints SOAP
+
+### Estrutura de Configuração Spring
+
+```
+charge-manager/
+└── src/main/java/com/dac/chargemanager/config/
+    ├── AppConfig.java          # Configuração principal (@ComponentScan)
+    ├── DatabaseConfig.java     # DataSource, Flyway, TransactionManager
+    ├── EmailConfig.java        # Jakarta Mail Session
+    ├── JaxWsConfig.java        # Beans para endpoints SOAP
+    └── WebConfig.java          # Spring MVC (opcional)
+
+charge-proxy/
+└── src/main/java/com/dac/chargeproxy/config/
+    ├── SpringAppConfig.java    # Configuração principal
+    ├── AsaasConfig.java        # AsaasClient bean
+    ├── JaxWsConfig.java        # Beans para endpoints SOAP
+    └── WebConfig.java          # Spring MVC (opcional)
+```
+
 ## Estrutura do Projeto
 
 ```
@@ -146,16 +176,21 @@ charger-management-system-java/
 ├── charge-manager/              # Serviço principal (arquitetura 3 camadas)
 │   ├── src/main/java/com/dac/chargemanager/
 │   │   ├── api/                 # Camada API (SOAP, Servlets)
-│   │   │   ├── soap/            # Endpoints SOAP (JAX-WS)
+│   │   │   ├── soap/            # Endpoints SOAP (JAX-WS + Spring)
 │   │   │   └── servlet/         # Health check servlet
-│   │   ├── business/            # Serviços, DTOs, Exceções
-│   │   └── infra/               # Repositórios, Entidades, Config
-│   │       ├── config/          # DatabaseConfig, ServiceLocator
+│   │   ├── business/            # Serviços (@Service), DTOs, Eventos
+│   │   │   ├── service/         # CustomerService, ChargeService, EmailService
+│   │   │   ├── event/           # ChargeEventPublisher, listeners
+│   │   │   ├── dto/             # Data Transfer Objects
+│   │   │   └── exception/       # Exceções de negócio
+│   │   ├── config/              # Spring Configuration classes
+│   │   └── infra/               # Repositórios (@Repository), Entidades
 │   │       ├── entity/          # Entidades JPA
-│   │       └── repository/      # Repositórios JDBC
+│   │       ├── repository/      # Repositórios JDBC
+│   │       └── client/          # ChargeProxyClient (SOAP RPC)
 │   ├── src/main/webapp/WEB-INF/ # Configuração web
-│   │   ├── web.xml              # Configuração Servlet
-│   │   └── sun-jaxws.xml        # Configuração JAX-WS
+│   │   ├── web.xml              # Spring ContextLoaderListener + JAX-WS
+│   │   └── sun-jaxws.xml        # Configuração JAX-WS endpoints
 │   ├── src/main/resources/
 │   │   ├── application.properties
 │   │   ├── logback.xml
@@ -164,12 +199,13 @@ charger-management-system-java/
 │   └── pom.xml
 ├── charge-proxy/                # Serviço proxy SOAP
 │   ├── src/main/java/com/dac/chargeproxy/
-│   │   ├── soap/                # Endpoint JAX-WS SOAP
-│   │   ├── client/              # Cliente ASAAS (HttpClient)
-│   │   ├── config/              # Configuração e ServiceLocator
-│   │   └── servlet/             # Health check servlet
+│   │   ├── soap/                # Endpoint JAX-WS SOAP + Spring
+│   │   ├── client/              # AsaasClient (HttpClient - REST)
+│   │   ├── config/              # Spring Configuration
+│   │   ├── business/            # Regras de negócio do proxy
+│   │   └── servlet/             # Health check, Webhook
 │   ├── src/main/webapp/WEB-INF/
-│   │   ├── web.xml
+│   │   ├── web.xml              # Spring ContextLoaderListener + JAX-WS
 │   │   └── sun-jaxws.xml
 │   ├── Dockerfile
 │   └── pom.xml
@@ -194,6 +230,21 @@ charger-management-system-java/
 | `deleteCustomer` | Excluir cliente |
 | `healthCheck` | Verificar saúde do serviço |
 
+### Charge Manager - Charge Service
+
+**WSDL**: http://localhost:8080/ws/charge?wsdl
+
+| Operação | Descrição |
+|----------|-----------|
+| `createCharge` | Criar uma cobrança |
+| `getCharge` | Obter cobrança por ID |
+| `getChargeByExternalId` | Obter cobrança por ID externo |
+| `getChargesByCustomer` | Listar cobranças do cliente |
+| `getAllCharges` | Listar todas as cobranças |
+| `updateCharge` | Atualizar cobrança |
+| `updateChargeStatus` | Atualizar status da cobrança |
+| `cancelCharge` | Cancelar cobrança |
+
 ### Charge Proxy - Charge Service
 
 **WSDL**: http://localhost:8082/ws/charge?wsdl
@@ -204,6 +255,11 @@ charger-management-system-java/
 | `getCharge` | Obter cobrança por ID |
 | `cancelCharge` | Cancelar cobrança |
 | `healthCheck` | Verificar saúde do serviço |
+
+## Comunicação entre Serviços
+
+- **Charge Manager ↔ Charge Proxy**: SOAP RPC/Literal (JAX-WS)
+- **Charge Proxy ↔ ASAAS**: REST API (Apache HttpClient 5)
 
 ## Exemplos de Requisições SOAP
 
@@ -279,10 +335,16 @@ docker service inspect charge-system_charge-manager
 
 ## Iterações de Entrega
 
-### Iteração 1 (Atual)
+### Iteração 1
 - [x] Todos os módulos ativados via Docker
 - [x] Rota funcional passando por todas as camadas até o banco de dados
 - [x] CRUD de clientes com arquitetura de 3 camadas
 - [x] Endpoints SOAP (JAX-WS)
 - [x] Docker Swarm para orquestração
-- [x] Jakarta EE puro (sem Spring Boot)
+
+### Iteração 2 (Atual)
+- [x] Migração de Jakarta EE puro para Spring Framework
+- [x] Injeção de Dependência com Spring
+- [x] Configuração via classes `@Configuration`
+- [x] Integração JAX-WS com Spring beans
+- [x] Event-driven architecture com Spring

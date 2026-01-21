@@ -4,6 +4,8 @@ import com.dac.chargemanager.infra.entity.Charge;
 import com.dac.chargemanager.infra.entity.ChargeStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
 import java.sql.*;
@@ -14,20 +16,29 @@ import java.util.Optional;
 
 /**
  * Repository for Charge entity using pure JDBC.
+ * Supports explicit transaction management by accepting Connection parameter.
  */
+@Repository
 public class ChargeRepository {
 
     private static final Logger logger = LoggerFactory.getLogger(ChargeRepository.class);
     private final DataSource dataSource;
 
+    @Autowired
     public ChargeRepository(DataSource dataSource) {
         this.dataSource = dataSource;
     }
 
+    // ==================== METHODS WITH CONNECTION PARAMETER ====================
+
     /**
-     * Creates a new charge in the database.
+     * Creates a new charge in the database using provided connection.
+     *
+     * @param charge the charge to create
+     * @param conn the database connection (caller manages transaction)
+     * @return the created charge with generated ID
      */
-    public Charge save(Charge charge) {
+    public Charge save(Charge charge, Connection conn) {
         String sql = """
             INSERT INTO charge (customer_id, external_id, value, due_date, billing_type, 
                                status, description, pix_code, boleto_code, invoice_url, created_at)
@@ -35,8 +46,7 @@ public class ChargeRepository {
             """;
         LocalDateTime now = LocalDateTime.now();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             ps.setLong(1, charge.getCustomerId());
             ps.setString(2, charge.getExternalId());
@@ -75,9 +85,13 @@ public class ChargeRepository {
     }
 
     /**
-     * Updates an existing charge.
+     * Updates an existing charge using provided connection.
+     *
+     * @param charge the charge to update
+     * @param conn the database connection (caller manages transaction)
+     * @return the updated charge
      */
-    public Charge update(Charge charge) {
+    public Charge update(Charge charge, Connection conn) {
         String sql = """
             UPDATE charge SET customer_id = ?, external_id = ?, value = ?, due_date = ?, 
                              billing_type = ?, status = ?, description = ?, pix_code = ?, 
@@ -86,8 +100,7 @@ public class ChargeRepository {
             """;
         LocalDateTime now = LocalDateTime.now();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, charge.getCustomerId());
             ps.setString(2, charge.getExternalId());
@@ -114,14 +127,18 @@ public class ChargeRepository {
     }
 
     /**
-     * Updates only the status of a charge.
+     * Updates only the status of a charge using provided connection.
+     *
+     * @param id the charge ID
+     * @param status the new status
+     * @param conn the database connection (caller manages transaction)
+     * @return true if updated, false otherwise
      */
-    public boolean updateStatus(Long id, ChargeStatus status) {
+    public boolean updateStatus(Long id, ChargeStatus status, Connection conn) {
         String sql = "UPDATE charge SET status = ?, updated_at = ? WHERE id = ?";
         LocalDateTime now = LocalDateTime.now();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, status.name());
             ps.setTimestamp(2, Timestamp.valueOf(now));
@@ -138,14 +155,18 @@ public class ChargeRepository {
     }
 
     /**
-     * Updates status by external ID.
+     * Updates status by external ID using provided connection.
+     *
+     * @param externalId the external ID
+     * @param status the new status
+     * @param conn the database connection (caller manages transaction)
+     * @return true if updated, false otherwise
      */
-    public boolean updateStatusByExternalId(String externalId, ChargeStatus status) {
+    public boolean updateStatusByExternalId(String externalId, ChargeStatus status, Connection conn) {
         String sql = "UPDATE charge SET status = ?, updated_at = ? WHERE external_id = ?";
         LocalDateTime now = LocalDateTime.now();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, status.name());
             ps.setTimestamp(2, Timestamp.valueOf(now));
@@ -162,13 +183,16 @@ public class ChargeRepository {
     }
 
     /**
-     * Finds a charge by ID.
+     * Finds a charge by ID using provided connection.
+     *
+     * @param id the charge ID
+     * @param conn the database connection (caller manages transaction)
+     * @return optional containing the charge if found
      */
-    public Optional<Charge> findById(Long id) {
+    public Optional<Charge> findById(Long id, Connection conn) {
         String sql = "SELECT * FROM charge WHERE id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, id);
 
@@ -187,13 +211,16 @@ public class ChargeRepository {
     }
 
     /**
-     * Finds a charge by external ID.
+     * Finds a charge by external ID using provided connection.
+     *
+     * @param externalId the external ID
+     * @param conn the database connection (caller manages transaction)
+     * @return optional containing the charge if found
      */
-    public Optional<Charge> findByExternalId(String externalId) {
+    public Optional<Charge> findByExternalId(String externalId, Connection conn) {
         String sql = "SELECT * FROM charge WHERE external_id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, externalId);
 
@@ -212,14 +239,17 @@ public class ChargeRepository {
     }
 
     /**
-     * Finds all charges for a customer.
+     * Finds all charges for a customer using provided connection.
+     *
+     * @param customerId the customer ID
+     * @param conn the database connection (caller manages transaction)
+     * @return list of charges
      */
-    public List<Charge> findByCustomerId(Long customerId) {
+    public List<Charge> findByCustomerId(Long customerId, Connection conn) {
         String sql = "SELECT * FROM charge WHERE customer_id = ? ORDER BY created_at DESC";
         List<Charge> charges = new ArrayList<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, customerId);
 
@@ -238,14 +268,17 @@ public class ChargeRepository {
     }
 
     /**
-     * Finds all charges with a specific status.
+     * Finds all charges with a specific status using provided connection.
+     *
+     * @param status the charge status
+     * @param conn the database connection (caller manages transaction)
+     * @return list of charges
      */
-    public List<Charge> findByStatus(ChargeStatus status) {
+    public List<Charge> findByStatus(ChargeStatus status, Connection conn) {
         String sql = "SELECT * FROM charge WHERE status = ? ORDER BY created_at DESC";
         List<Charge> charges = new ArrayList<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setString(1, status.name());
 
@@ -264,14 +297,16 @@ public class ChargeRepository {
     }
 
     /**
-     * Returns all charges.
+     * Returns all charges using provided connection.
+     *
+     * @param conn the database connection (caller manages transaction)
+     * @return list of all charges
      */
-    public List<Charge> findAll() {
+    public List<Charge> findAll(Connection conn) {
         String sql = "SELECT * FROM charge ORDER BY created_at DESC";
         List<Charge> charges = new ArrayList<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
+        try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
@@ -287,13 +322,16 @@ public class ChargeRepository {
     }
 
     /**
-     * Deletes a charge by ID.
+     * Deletes a charge by ID using provided connection.
+     *
+     * @param id the charge ID
+     * @param conn the database connection (caller manages transaction)
+     * @return true if deleted, false otherwise
      */
-    public boolean deleteById(Long id) {
+    public boolean deleteById(Long id, Connection conn) {
         String sql = "DELETE FROM charge WHERE id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, id);
             int rowsAffected = ps.executeUpdate();
@@ -307,13 +345,16 @@ public class ChargeRepository {
     }
 
     /**
-     * Checks if a charge exists by ID.
+     * Checks if a charge exists by ID using provided connection.
+     *
+     * @param id the charge ID
+     * @param conn the database connection (caller manages transaction)
+     * @return true if exists, false otherwise
      */
-    public boolean existsById(Long id) {
+    public boolean existsById(Long id, Connection conn) {
         String sql = "SELECT COUNT(*) FROM charge WHERE id = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, id);
 
@@ -328,6 +369,151 @@ public class ChargeRepository {
         } catch (SQLException e) {
             logger.error("Error checking charge existence", e);
             throw new RuntimeException("Failed to check charge existence", e);
+        }
+    }
+
+    // ==================== CONVENIENCE METHODS (AUTO-MANAGED CONNECTION) ====================
+
+    /**
+     * Creates a new charge in the database.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public Charge save(Charge charge) {
+        try (Connection conn = dataSource.getConnection()) {
+            return save(charge, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Updates an existing charge.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public Charge update(Charge charge) {
+        try (Connection conn = dataSource.getConnection()) {
+            return update(charge, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Updates only the status of a charge.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public boolean updateStatus(Long id, ChargeStatus status) {
+        try (Connection conn = dataSource.getConnection()) {
+            return updateStatus(id, status, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Updates status by external ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public boolean updateStatusByExternalId(String externalId, ChargeStatus status) {
+        try (Connection conn = dataSource.getConnection()) {
+            return updateStatusByExternalId(externalId, status, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Finds a charge by ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public Optional<Charge> findById(Long id) {
+        try (Connection conn = dataSource.getConnection()) {
+            return findById(id, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Finds a charge by external ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public Optional<Charge> findByExternalId(String externalId) {
+        try (Connection conn = dataSource.getConnection()) {
+            return findByExternalId(externalId, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Finds all charges for a customer.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public List<Charge> findByCustomerId(Long customerId) {
+        try (Connection conn = dataSource.getConnection()) {
+            return findByCustomerId(customerId, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Finds all charges with a specific status.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public List<Charge> findByStatus(ChargeStatus status) {
+        try (Connection conn = dataSource.getConnection()) {
+            return findByStatus(status, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Returns all charges.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public List<Charge> findAll() {
+        try (Connection conn = dataSource.getConnection()) {
+            return findAll(conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Deletes a charge by ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public boolean deleteById(Long id) {
+        try (Connection conn = dataSource.getConnection()) {
+            return deleteById(id, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
+        }
+    }
+
+    /**
+     * Checks if a charge exists by ID.
+     * Uses auto-managed connection (auto-commit enabled).
+     */
+    public boolean existsById(Long id) {
+        try (Connection conn = dataSource.getConnection()) {
+            return existsById(id, conn);
+        } catch (SQLException e) {
+            logger.error("Error obtaining connection", e);
+            throw new RuntimeException("Failed to obtain database connection", e);
         }
     }
 

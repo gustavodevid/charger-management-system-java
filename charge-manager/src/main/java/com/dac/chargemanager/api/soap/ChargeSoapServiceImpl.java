@@ -9,10 +9,12 @@ import com.dac.chargemanager.business.exception.BusinessException;
 import com.dac.chargemanager.business.exception.ResourceNotFoundException;
 import com.dac.chargemanager.business.service.ChargeService;
 import com.dac.chargemanager.infra.client.ChargeProxyClient;
-import com.dac.chargemanager.infra.config.ServiceLocator;
 import jakarta.jws.WebService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.web.context.support.SpringBeanAutowiringSupport;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -21,7 +23,9 @@ import java.util.stream.Collectors;
 
 /**
  * Implementation of the Charge SOAP service.
+ * Uses Spring DI for service injection.
  */
+@Component
 @WebService(
         serviceName = "ChargeService",
         portName = "ChargePort",
@@ -33,11 +37,15 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
     private static final Logger logger = LoggerFactory.getLogger(ChargeSoapServiceImpl.class);
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    @Autowired
     private ChargeService chargeService;
+
+    @Autowired
     private ChargeProxyClient proxyClient;
 
     public ChargeSoapServiceImpl() {
-        // Services will be lazily initialized from ServiceLocator
+        // Enable Spring autowiring for JAX-WS endpoint
+        SpringBeanAutowiringSupport.processInjectionBasedOnCurrentContext(this);
     }
 
     public ChargeSoapServiceImpl(ChargeService chargeService, ChargeProxyClient proxyClient) {
@@ -45,22 +53,18 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
         this.proxyClient = proxyClient;
     }
 
-    private ChargeService getChargeService() {
-        if (chargeService == null) {
-            chargeService = ServiceLocator.getChargeService();
+    /**
+     * Ensures Spring beans are injected.
+     */
+    private void ensureInjection() {
+        if (chargeService == null || proxyClient == null) {
+            SpringBeanAutowiringSupport.processInjectionBasedOnCurrentContext(this);
         }
-        return chargeService;
-    }
-
-    private ChargeProxyClient getProxyClient() {
-        if (proxyClient == null) {
-            proxyClient = ServiceLocator.getChargeProxyClient();
-        }
-        return proxyClient;
     }
 
     @Override
     public ChargeResponse createCharge(ChargeRequest request) {
+        ensureInjection();
         logger.info("SOAP createCharge - customerId: {}, value: {}, type: {}", 
                 request.getCustomerId(), request.getValue(), request.getBillingType());
 
@@ -74,11 +78,11 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
             dto.setDescription(request.getDescription());
 
             // Create charge in database (status: PENDING)
-            ChargeDTO created = getChargeService().createCharge(dto);
+            ChargeDTO created = chargeService.createCharge(dto);
             logger.info("Charge created with ID: {}", created.getId());
 
             // Call proxy to register with payment gateway
-            ChargeProxyClient.ProxyChargeResponse proxyResponse = getProxyClient().createCharge(
+            ChargeProxyClient.ProxyChargeResponse proxyResponse = proxyClient.createCharge(
                     created.getCustomerId().toString(),
                     created.getValue(),
                     created.getDueDate().format(DATE_FORMATTER),
@@ -88,7 +92,7 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
             if (proxyResponse.isSuccess()) {
                 // Update charge with external ID and payment info
-                ChargeDTO updated = getChargeService().updateChargeFromProxy(
+                ChargeDTO updated = chargeService.updateChargeFromProxy(
                         created.getId(),
                         proxyResponse.getChargeId(),
                         proxyResponse.getPixCode(),
@@ -119,10 +123,11 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeResponse getCharge(Long chargeId) {
+        ensureInjection();
         logger.info("SOAP getCharge - id: {}", chargeId);
 
         try {
-            ChargeDTO charge = getChargeService().getChargeById(chargeId);
+            ChargeDTO charge = chargeService.getChargeById(chargeId);
             return toResponse(charge);
 
         } catch (ResourceNotFoundException e) {
@@ -136,10 +141,11 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeResponse getChargeByExternalId(String externalId) {
+        ensureInjection();
         logger.info("SOAP getChargeByExternalId - externalId: {}", externalId);
 
         try {
-            ChargeDTO charge = getChargeService().getChargeByExternalId(externalId);
+            ChargeDTO charge = chargeService.getChargeByExternalId(externalId);
             return toResponse(charge);
 
         } catch (ResourceNotFoundException e) {
@@ -153,10 +159,11 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeListResponse getChargesByCustomer(Long customerId) {
+        ensureInjection();
         logger.info("SOAP getChargesByCustomer - customerId: {}", customerId);
 
         try {
-            List<ChargeDTO> charges = getChargeService().getChargesByCustomerId(customerId);
+            List<ChargeDTO> charges = chargeService.getChargesByCustomerId(customerId);
             List<ChargeResponse> responses = charges.stream()
                     .map(this::toResponse)
                     .collect(Collectors.toList());
@@ -175,10 +182,11 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeListResponse getAllCharges() {
+        ensureInjection();
         logger.info("SOAP getAllCharges");
 
         try {
-            List<ChargeDTO> charges = getChargeService().getAllCharges();
+            List<ChargeDTO> charges = chargeService.getAllCharges();
             List<ChargeResponse> responses = charges.stream()
                     .map(this::toResponse)
                     .collect(Collectors.toList());
@@ -194,6 +202,7 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeResponse updateCharge(Long chargeId, ChargeUpdateRequest request) {
+        ensureInjection();
         logger.info("SOAP updateCharge - id: {}", chargeId);
 
         try {
@@ -212,7 +221,7 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
                 updates.setDueDate(LocalDate.parse(request.getDueDate(), DATE_FORMATTER));
             }
 
-            ChargeDTO updated = getChargeService().updateCharge(chargeId, updates);
+            ChargeDTO updated = chargeService.updateCharge(chargeId, updates);
             logger.info("Charge {} updated successfully", chargeId);
             return toResponse(updated);
 
@@ -230,10 +239,11 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeResponse updateChargeStatus(Long chargeId, String status) {
+        ensureInjection();
         logger.info("SOAP updateChargeStatus - id: {}, status: {}", chargeId, status);
 
         try {
-            ChargeDTO updated = getChargeService().updateStatus(chargeId, status);
+            ChargeDTO updated = chargeService.updateStatus(chargeId, status);
             logger.info("Charge {} status updated to {}", chargeId, status);
             return toResponse(updated);
 
@@ -251,10 +261,11 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeResponse updateChargeStatusByExternalId(String externalId, String status) {
+        ensureInjection();
         logger.info("SOAP updateChargeStatusByExternalId - externalId: {}, status: {}", externalId, status);
 
         try {
-            ChargeDTO updated = getChargeService().updateStatusByExternalId(externalId, status);
+            ChargeDTO updated = chargeService.updateStatusByExternalId(externalId, status);
             logger.info("Charge with external ID {} status updated to {}", externalId, status);
             return toResponse(updated);
 
@@ -272,22 +283,23 @@ public class ChargeSoapServiceImpl implements ChargeSoapService {
 
     @Override
     public ChargeResponse cancelCharge(Long chargeId) {
+        ensureInjection();
         logger.info("SOAP cancelCharge - id: {}", chargeId);
 
         try {
             // Get charge to check for external ID
-            ChargeDTO charge = getChargeService().getChargeById(chargeId);
+            ChargeDTO charge = chargeService.getChargeById(chargeId);
 
             // If charge has external ID, cancel in proxy
             if (charge.getExternalId() != null && !charge.getExternalId().isEmpty()) {
-                ChargeProxyClient.ProxyChargeResponse proxyResponse = getProxyClient().cancelCharge(charge.getExternalId());
+                ChargeProxyClient.ProxyChargeResponse proxyResponse = proxyClient.cancelCharge(charge.getExternalId());
                 if (!proxyResponse.isSuccess()) {
                     logger.warn("Proxy cancellation failed: {}", proxyResponse.getErrorMessage());
                 }
             }
 
             // Cancel in database
-            ChargeDTO canceled = getChargeService().cancelCharge(chargeId);
+            ChargeDTO canceled = chargeService.cancelCharge(chargeId);
             logger.info("Charge {} canceled", chargeId);
             return toResponse(canceled);
 

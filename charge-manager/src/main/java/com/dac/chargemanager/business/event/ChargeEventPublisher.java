@@ -1,7 +1,10 @@
 package com.dac.chargemanager.business.event;
 
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,7 +13,9 @@ import java.util.concurrent.Executors;
 
 /**
  * Publisher for charge events (Observable in Observer pattern).
+ * Spring-managed component with automatic listener registration.
  */
+@Component
 public class ChargeEventPublisher {
 
     private static final Logger logger = LoggerFactory.getLogger(ChargeEventPublisher.class);
@@ -30,6 +35,20 @@ public class ChargeEventPublisher {
             this.executorService = Executors.newFixedThreadPool(2);
         } else {
             this.executorService = null;
+        }
+    }
+
+    /**
+     * Automatically registers all ChargeEventListener beans.
+     * This method is called by Spring after all beans are created.
+     */
+    @Autowired(required = false)
+    public void registerListeners(List<ChargeEventListener> eventListeners) {
+        if (eventListeners != null) {
+            for (ChargeEventListener listener : eventListeners) {
+                addListener(listener);
+            }
+            logger.info("Registered {} event listeners via Spring autowiring", eventListeners.size());
         }
     }
 
@@ -88,7 +107,9 @@ public class ChargeEventPublisher {
 
     /**
      * Shuts down the executor service.
+     * Called automatically by Spring on application shutdown.
      */
+    @PreDestroy
     public void shutdown() {
         if (executorService != null) {
             executorService.shutdown();

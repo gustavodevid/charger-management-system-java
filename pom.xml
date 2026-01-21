@@ -10,7 +10,7 @@
     <packaging>pom</packaging>
 
     <name>Charger Management System</name>
-    <description>Charge management system with ASAAS payment gateway integration - Jakarta EE</description>
+    <description>Charge management system with ASAAS payment gateway integration - Spring Framework</description>
 
     <modules>
         <module>charge-manager</module>
@@ -23,11 +23,16 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
-        <!-- Jakarta EE versions -->
+        <!-- Spring Framework versions -->
+        <spring.version>6.1.4</spring.version>
+        <spring-ws.version>4.0.10</spring-ws.version>
+        
+        <!-- Jakarta EE versions (for Servlet API and JAX-WS) -->
         <jakarta.servlet.version>6.0.0</jakarta.servlet.version>
         <jakarta.xml.ws.version>4.0.0</jakarta.xml.ws.version>
         <jakarta.xml.bind.version>4.0.0</jakarta.xml.bind.version>
         <jakarta.mail.version>2.1.2</jakarta.mail.version>
+        <jakarta.annotation.version>2.1.1</jakarta.annotation.version>
         
         <!-- Implementation versions -->
         <jaxws.rt.version>4.0.1</jaxws.rt.version>
@@ -38,9 +43,11 @@
         <postgresql.version>42.7.1</postgresql.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <flyway.version>10.10.0</flyway.version>
+        <spring-jdbc.version>6.1.4</spring-jdbc.version>
         
         <!-- HTTP Client -->
         <httpclient5.version>5.3</httpclient5.version>
+        <openfeign.version>13.1</openfeign.version>
         
         <!-- Logging -->
         <slf4j.version>2.0.11</slf4j.version>
@@ -55,12 +62,70 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Spring Framework BOM -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-framework-bom</artifactId>
+                <version>${spring.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            
+            <!-- Spring Core -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-core</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            
+            <!-- Spring Context -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-context</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            
+            <!-- Spring Web -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-web</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            
+            <!-- Spring Web MVC -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webmvc</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            
+            <!-- Spring JDBC -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-jdbc</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            
+            <!-- Spring TX -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-tx</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            
             <!-- Jakarta Servlet API -->
             <dependency>
                 <groupId>jakarta.servlet</groupId>
                 <artifactId>jakarta.servlet-api</artifactId>
                 <version>${jakarta.servlet.version}</version>
                 <scope>provided</scope>
+            </dependency>
+            
+            <!-- Jakarta Annotation API -->
+            <dependency>
+                <groupId>jakarta.annotation</groupId>
+                <artifactId>jakarta.annotation-api</artifactId>
+                <version>${jakarta.annotation.version}</version>
             </dependency>
             
             <!-- JAX-WS API -->
@@ -138,6 +203,23 @@
                 <version>${httpclient5.version}</version>
             </dependency>
             
+            <!-- OpenFeign -->
+            <dependency>
+                <groupId>io.github.openfeign</groupId>
+                <artifactId>feign-core</artifactId>
+                <version>${openfeign.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.openfeign</groupId>
+                <artifactId>feign-jackson</artifactId>
+                <version>${openfeign.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.openfeign</groupId>
+                <artifactId>feign-slf4j</artifactId>
+                <version>${openfeign.version}</version>
+            </dependency>
+            
             <!-- SLF4J -->
             <dependency>
                 <groupId>org.slf4j</groupId>
@@ -164,6 +246,14 @@
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+            
+            <!-- Spring Test -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-test</artifactId>
+                <version>${spring.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>

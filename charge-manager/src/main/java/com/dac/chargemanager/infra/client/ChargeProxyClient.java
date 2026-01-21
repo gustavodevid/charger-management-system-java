@@ -1,10 +1,11 @@
 package com.dac.chargemanager.infra.client;
 
-import com.dac.chargemanager.business.dto.ChargeDTO;
+import jakarta.annotation.PreDestroy;
 import jakarta.xml.soap.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.w3c.dom.NodeList;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
@@ -15,19 +16,22 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
- * SOAP Client for communicating with Charge Proxy service.
+ * SOAP RPC Client for communicating with Charge Proxy service.
+ * Uses SOAP RPC/Literal style for all operations.
  */
+@Component
 public class ChargeProxyClient {
 
     private static final Logger logger = LoggerFactory.getLogger(ChargeProxyClient.class);
     private static final String NAMESPACE = "http://chargeproxy.dac.com/soap";
+    private static final String NAMESPACE_PREFIX = "ns";
 
     private final String proxyUrl;
     private final HttpClient httpClient;
     private final MessageFactory messageFactory;
 
-    public ChargeProxyClient(String proxyUrl) {
-        this.proxyUrl = proxyUrl;
+    public ChargeProxyClient(@Value("${charge.proxy.url:}") String configuredUrl) {
+        this.proxyUrl = buildProxyUrl(configuredUrl);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
@@ -36,7 +40,26 @@ public class ChargeProxyClient {
         } catch (SOAPException e) {
             throw new RuntimeException("Failed to create SOAP MessageFactory", e);
         }
-        logger.info("ChargeProxyClient initialized with URL: {}", proxyUrl);
+        logger.info("ChargeProxyClient initialized with URL: {}", this.proxyUrl);
+    }
+
+    private String buildProxyUrl(String configuredUrl) {
+        // Check environment variables first
+        String envHost = System.getenv("CHARGE_PROXY_HOST");
+        String envPort = System.getenv("CHARGE_PROXY_PORT");
+        
+        if (envHost != null && !envHost.isEmpty()) {
+            String port = (envPort != null && !envPort.isEmpty()) ? envPort : "8080";
+            return "http://" + envHost + ":" + port + "/charge-proxy/ws/charge";
+        }
+        
+        // Fall back to configured URL
+        if (configuredUrl != null && !configuredUrl.isEmpty()) {
+            return configuredUrl;
+        }
+        
+        // Default URL
+        return "http://charge-proxy:8080/charge-proxy/ws/charge";
     }
 
     /**
@@ -121,16 +144,22 @@ public class ChargeProxyClient {
         }
     }
 
+    /**
+     * Creates a SOAP RPC request for createCharge operation.
+     * RPC style: parameters are direct children of the operation element.
+     */
     private SOAPMessage createChargeRequest(String customerId, BigDecimal value, 
                                             String dueDate, String billingType, String description) throws SOAPException {
         SOAPMessage message = messageFactory.createMessage();
         SOAPEnvelope envelope = message.getSOAPPart().getEnvelope();
-        envelope.addNamespaceDeclaration("soap", NAMESPACE);
+        envelope.addNamespaceDeclaration(NAMESPACE_PREFIX, NAMESPACE);
 
         SOAPBody body = envelope.getBody();
-        SOAPElement operation = body.addChildElement("createCharge", "soap");
-        SOAPElement request = operation.addChildElement("ChargeRequest", "soap");
-
+        // RPC style: operation element with namespace
+        SOAPElement operation = body.addChildElement("createCharge", NAMESPACE_PREFIX, NAMESPACE);
+        
+        // RPC style: ChargeRequest parameter (complex type wrapper)
+        SOAPElement request = operation.addChildElement("ChargeRequest");
         request.addChildElement("customerId").addTextNode(customerId);
         request.addChildElement("value").addTextNode(value.toString());
         request.addChildElement("dueDate").addTextNode(dueDate);
@@ -143,39 +172,53 @@ public class ChargeProxyClient {
         return message;
     }
 
+    /**
+     * Creates a SOAP RPC request for getCharge operation.
+     */
     private SOAPMessage createGetChargeRequest(String chargeId) throws SOAPException {
         SOAPMessage message = messageFactory.createMessage();
         SOAPEnvelope envelope = message.getSOAPPart().getEnvelope();
-        envelope.addNamespaceDeclaration("soap", NAMESPACE);
+        envelope.addNamespaceDeclaration(NAMESPACE_PREFIX, NAMESPACE);
 
         SOAPBody body = envelope.getBody();
-        SOAPElement operation = body.addChildElement("getCharge", "soap");
+        // RPC style: operation element with namespace
+        SOAPElement operation = body.addChildElement("getCharge", NAMESPACE_PREFIX, NAMESPACE);
+        // RPC style: simple parameter without namespace
         operation.addChildElement("chargeId").addTextNode(chargeId);
 
         message.saveChanges();
         return message;
     }
 
+    /**
+     * Creates a SOAP RPC request for cancelCharge operation.
+     */
     private SOAPMessage createCancelChargeRequest(String chargeId) throws SOAPException {
         SOAPMessage message = messageFactory.createMessage();
         SOAPEnvelope envelope = message.getSOAPPart().getEnvelope();
-        envelope.addNamespaceDeclaration("soap", NAMESPACE);
+        envelope.addNamespaceDeclaration(NAMESPACE_PREFIX, NAMESPACE);
 
         SOAPBody body = envelope.getBody();
-        SOAPElement operation = body.addChildElement("cancelCharge", "soap");
+        // RPC style: operation element with namespace
+        SOAPElement operation = body.addChildElement("cancelCharge", NAMESPACE_PREFIX, NAMESPACE);
+        // RPC style: simple parameter without namespace
         operation.addChildElement("chargeId").addTextNode(chargeId);
 
         message.saveChanges();
         return message;
     }
 
+    /**
+     * Creates a SOAP RPC request for healthCheck operation.
+     */
     private SOAPMessage createHealthCheckRequest() throws SOAPException {
         SOAPMessage message = messageFactory.createMessage();
         SOAPEnvelope envelope = message.getSOAPPart().getEnvelope();
-        envelope.addNamespaceDeclaration("soap", NAMESPACE);
+        envelope.addNamespaceDeclaration(NAMESPACE_PREFIX, NAMESPACE);
 
         SOAPBody body = envelope.getBody();
-        body.addChildElement("healthCheck", "soap");
+        // RPC style: operation element with namespace (no parameters)
+        body.addChildElement("healthCheck", NAMESPACE_PREFIX, NAMESPACE);
 
         message.saveChanges();
         return message;
@@ -259,6 +302,11 @@ public class ChargeProxyClient {
         }
 
         return null;
+    }
+
+    @PreDestroy
+    public void close() {
+        logger.info("ChargeProxyClient closed");
     }
 
     /**

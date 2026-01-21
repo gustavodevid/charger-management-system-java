@@ -7,10 +7,12 @@ import com.dac.chargemanager.business.dto.CustomerDTO;
 import com.dac.chargemanager.business.exception.BusinessException;
 import com.dac.chargemanager.business.exception.ResourceNotFoundException;
 import com.dac.chargemanager.business.service.CustomerService;
-import com.dac.chargemanager.infra.config.ServiceLocator;
 import jakarta.jws.WebService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.web.context.support.SpringBeanAutowiringSupport;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -20,7 +22,9 @@ import java.util.stream.Collectors;
 /**
  * Implementation of the Customer SOAP service.
  * API Layer - handles SOAP requests and delegates to business layer.
+ * Uses Spring DI for service injection.
  */
+@Component
 @WebService(
         serviceName = "CustomerService",
         portName = "CustomerPort",
@@ -31,41 +35,32 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomerSoapServiceImpl.class);
 
+    @Autowired
     private CustomerService customerService;
+
+    @Autowired
     private DataSource dataSource;
 
     /**
      * Default constructor required by JAX-WS.
-     * Services are obtained from ServiceLocator.
+     * Spring autowiring is handled via SpringBeanAutowiringSupport.
      */
     public CustomerSoapServiceImpl() {
-        // Services will be lazily initialized from ServiceLocator
+        // Enable Spring autowiring for JAX-WS endpoint
+        SpringBeanAutowiringSupport.processInjectionBasedOnCurrentContext(this);
     }
 
     /**
-     * Constructor for manual dependency injection.
+     * Constructor for manual dependency injection (testing).
      */
     public CustomerSoapServiceImpl(CustomerService customerService, DataSource dataSource) {
         this.customerService = customerService;
         this.dataSource = dataSource;
     }
 
-    private CustomerService getCustomerService() {
-        if (customerService == null) {
-            customerService = ServiceLocator.getCustomerService();
-        }
-        return customerService;
-    }
-
-    private DataSource getDataSource() {
-        if (dataSource == null) {
-            dataSource = ServiceLocator.getDataSource();
-        }
-        return dataSource;
-    }
-
     @Override
     public CustomerResponse createCustomer(CustomerRequest request) {
+        ensureInjection();
         logger.info("SOAP createCustomer - name: {}, email: {}", request.getName(), request.getEmail());
 
         try {
@@ -75,7 +70,7 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
             dto.setCpfCnpj(request.getCpfCnpj());
             dto.setPhone(request.getPhone());
 
-            CustomerDTO created = getCustomerService().createCustomer(dto);
+            CustomerDTO created = customerService.createCustomer(dto);
             logger.info("Customer created with ID: {}", created.getId());
 
             return toResponse(created);
@@ -91,10 +86,11 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
 
     @Override
     public CustomerResponse getCustomer(Long customerId) {
+        ensureInjection();
         logger.info("SOAP getCustomer - id: {}", customerId);
 
         try {
-            CustomerDTO customer = getCustomerService().getCustomerById(customerId);
+            CustomerDTO customer = customerService.getCustomerById(customerId);
             return toResponse(customer);
 
         } catch (ResourceNotFoundException e) {
@@ -108,10 +104,11 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
 
     @Override
     public CustomerListResponse getAllCustomers() {
+        ensureInjection();
         logger.info("SOAP getAllCustomers");
 
         try {
-            List<CustomerDTO> customers = getCustomerService().getAllCustomers();
+            List<CustomerDTO> customers = customerService.getAllCustomers();
             List<CustomerResponse> responses = customers.stream()
                     .map(this::toResponse)
                     .collect(Collectors.toList());
@@ -127,6 +124,7 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
 
     @Override
     public CustomerResponse updateCustomer(Long customerId, CustomerRequest request) {
+        ensureInjection();
         logger.info("SOAP updateCustomer - id: {}", customerId);
 
         try {
@@ -136,7 +134,7 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
             dto.setCpfCnpj(request.getCpfCnpj());
             dto.setPhone(request.getPhone());
 
-            CustomerDTO updated = getCustomerService().updateCustomer(customerId, dto);
+            CustomerDTO updated = customerService.updateCustomer(customerId, dto);
             logger.info("Customer updated with ID: {}", updated.getId());
 
             return toResponse(updated);
@@ -155,10 +153,11 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
 
     @Override
     public CustomerResponse deleteCustomer(Long customerId) {
+        ensureInjection();
         logger.info("SOAP deleteCustomer - id: {}", customerId);
 
         try {
-            getCustomerService().deleteCustomer(customerId);
+            customerService.deleteCustomer(customerId);
             logger.info("Customer deleted with ID: {}", customerId);
 
             CustomerResponse response = new CustomerResponse();
@@ -177,13 +176,24 @@ public class CustomerSoapServiceImpl implements CustomerSoapService {
 
     @Override
     public String healthCheck() {
+        ensureInjection();
         logger.debug("SOAP healthCheck");
 
-        try (Connection conn = getDataSource().getConnection()) {
+        try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute("SELECT 1");
             return "Charge Manager SOAP Service is UP - Database: OK - " + java.time.LocalDateTime.now();
         } catch (Exception e) {
             return "Charge Manager SOAP Service is UP - Database: DOWN - " + e.getMessage();
+        }
+    }
+
+    /**
+     * Ensures Spring beans are injected.
+     * JAX-WS creates instances outside of Spring's control, so we need to ensure injection.
+     */
+    private void ensureInjection() {
+        if (customerService == null || dataSource == null) {
+            SpringBeanAutowiringSupport.processInjectionBasedOnCurrentContext(this);
         }
     }
 

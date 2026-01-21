@@ -5,16 +5,21 @@ import com.dac.chargemanager.business.service.EmailService;
 import com.dac.chargemanager.infra.entity.ChargeStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 /**
  * Listener that sends email notifications when charge events occur.
+ * Automatically registered with ChargeEventPublisher via Spring DI.
  */
+@Component
 public class EmailNotificationListener implements ChargeEventListener {
 
     private static final Logger logger = LoggerFactory.getLogger(EmailNotificationListener.class);
 
     private final EmailService emailService;
 
+    @Autowired
     public EmailNotificationListener(EmailService emailService) {
         this.emailService = emailService;
     }

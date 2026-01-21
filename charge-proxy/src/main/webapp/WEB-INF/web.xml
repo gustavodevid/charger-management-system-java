@@ -6,33 +6,49 @@
          version="6.0">
 
     <display-name>Charge Proxy</display-name>
-    <description>Charge Proxy - SOAP service for ASAAS integration</description>
+    <description>Charge Proxy - SOAP service for ASAAS integration (Spring Framework)</description>
 
-    <!-- Application Context Listener for initialization -->
+    <!-- Spring Context Configuration -->
+    <context-param>
+        <param-name>contextClass</param-name>
+        <param-value>org.springframework.web.context.support.AnnotationConfigWebApplicationContext</param-value>
+    </context-param>
+    <context-param>
+        <param-name>contextConfigLocation</param-name>
+        <param-value>com.dac.chargeproxy.config.SpringAppConfig</param-value>
+    </context-param>
+
+    <!-- Spring Context Loader Listener - MUST be first -->
     <listener>
-        <listener-class>com.dac.chargeproxy.config.AppContextListener</listener-class>
+        <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
     </listener>
 
-    <!-- JAX-WS Servlet for SOAP endpoints -->
-    <servlet>
-        <servlet-name>JAXWSServlet</servlet-name>
-        <servlet-class>com.sun.xml.ws.transport.http.servlet.WSServlet</servlet-class>
-        <load-on-startup>1</load-on-startup>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>JAXWSServlet</servlet-name>
-        <url-pattern>/ws/*</url-pattern>
-    </servlet-mapping>
+    <!-- Spring Request Context Listener for request-scoped beans -->
+    <listener>
+        <listener-class>org.springframework.web.context.request.RequestContextListener</listener-class>
+    </listener>
 
     <!-- JAX-WS Context Listener -->
     <listener>
         <listener-class>com.sun.xml.ws.transport.http.servlet.WSServletContextListener</listener-class>
     </listener>
 
+    <!-- JAX-WS Servlet for SOAP endpoints -->
+    <servlet>
+        <servlet-name>JAXWSServlet</servlet-name>
+        <servlet-class>com.sun.xml.ws.transport.http.servlet.WSServlet</servlet-class>
+        <load-on-startup>2</load-on-startup>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>JAXWSServlet</servlet-name>
+        <url-pattern>/ws/charge</url-pattern>
+    </servlet-mapping>
+
     <!-- Health Check Servlet -->
     <servlet>
         <servlet-name>HealthServlet</servlet-name>
         <servlet-class>com.dac.chargeproxy.servlet.HealthServlet</servlet-class>
+        <load-on-startup>3</load-on-startup>
     </servlet>
     <servlet-mapping>
         <servlet-name>HealthServlet</servlet-name>
@@ -43,6 +59,7 @@
     <servlet>
         <servlet-name>WebhookServlet</servlet-name>
         <servlet-class>com.dac.chargeproxy.servlet.WebhookServlet</servlet-class>
+        <load-on-startup>3</load-on-startup>
     </servlet>
     <servlet-mapping>
         <servlet-name>WebhookServlet</servlet-name>

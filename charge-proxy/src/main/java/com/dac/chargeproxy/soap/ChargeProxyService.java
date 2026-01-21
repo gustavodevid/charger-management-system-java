@@ -6,12 +6,15 @@ import jakarta.jws.WebMethod;
 import jakarta.jws.WebParam;
 import jakarta.jws.WebResult;
 import jakarta.jws.WebService;
+import jakarta.jws.soap.SOAPBinding;
 
 /**
  * SOAP Web Service interface for Charge Proxy operations.
  * This service acts as a proxy between Charge Manager and ASAAS payment gateway.
+ * Uses SOAP RPC/Literal style for communication with Charge Manager.
  */
 @WebService(name = "ChargeProxyService", targetNamespace = "http://chargeproxy.dac.com/soap")
+@SOAPBinding(style = SOAPBinding.Style.RPC)
 public interface ChargeProxyService {
 
     /**

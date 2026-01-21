@@ -1,60 +1,68 @@
 package com.dac.chargemanager.business.service;
 
 import com.dac.chargemanager.business.dto.ChargeDTO;
-import com.dac.chargemanager.infra.config.EmailConfig;
 import com.dac.chargemanager.infra.entity.ChargeStatus;
 import jakarta.mail.*;
 import jakarta.mail.internet.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
-import java.util.Properties;
 
 /**
  * Service for sending email notifications.
  */
+@Service
 public class EmailService {
 
     private static final Logger logger = LoggerFactory.getLogger(EmailService.class);
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final NumberFormat CURRENCY_FORMATTER = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
 
-    private final EmailConfig config;
     private final Session session;
+    private final String fromAddress;
+    private final String fromName;
+    private final String username;
+    private final String password;
 
-    public EmailService() {
-        this.config = EmailConfig.getInstance();
-        this.session = createSession();
+    @Autowired
+    public EmailService(Session mailSession, 
+                        @Qualifier("mailFrom") String mailFrom,
+                        @Value("${mail.from.name:Charge Manager}") String fromName,
+                        @Value("${mail.username:}") String username,
+                        @Value("${mail.password:}") String password) {
+        this.session = mailSession;
+        this.fromAddress = mailFrom;
+        this.fromName = getEnvOrDefault("MAIL_FROM_NAME", fromName);
+        
+        // Check environment variables for credentials
+        String envUser = System.getenv("MAIL_USERNAME");
+        String envPass = System.getenv("MAIL_PASSWORD");
+        this.username = (envUser != null && !envUser.isEmpty()) ? envUser : username;
+        this.password = (envPass != null && !envPass.isEmpty()) ? envPass : password;
     }
 
-    private Session createSession() {
-        Properties props = new Properties();
-        props.put("mail.smtp.host", config.getHost());
-        props.put("mail.smtp.port", String.valueOf(config.getPort()));
-        props.put("mail.smtp.auth", String.valueOf(config.isSmtpAuth()));
-        props.put("mail.smtp.starttls.enable", String.valueOf(config.isStarttls()));
+    private String getEnvOrDefault(String envKey, String defaultValue) {
+        String envValue = System.getenv(envKey);
+        return (envValue != null && !envValue.isEmpty()) ? envValue : defaultValue;
+    }
 
-        if (config.isSmtpAuth()) {
-            return Session.getInstance(props, new Authenticator() {
-                @Override
-                protected PasswordAuthentication getPasswordAuthentication() {
-                    return new PasswordAuthentication(config.getUsername(), config.getPassword());
-                }
-            });
-        } else {
-            return Session.getInstance(props);
-        }
+    private boolean isConfigured() {
+        return username != null && !username.isEmpty() && password != null && !password.isEmpty();
     }
 
     /**
      * Sends a charge status notification email.
      */
     public void sendChargeStatusNotification(ChargeDTO charge, ChargeStatus oldStatus, ChargeStatus newStatus) {
-        if (!config.isConfigured()) {
+        if (!isConfigured()) {
             logger.warn("Email not configured, skipping notification for charge {}", charge.getId());
             return;
         }
@@ -81,7 +89,7 @@ public class EmailService {
      * Sends a charge created notification email.
      */
     public void sendChargeCreatedNotification(ChargeDTO charge) {
-        if (!config.isConfigured()) {
+        if (!isConfigured()) {
             logger.warn("Email not configured, skipping notification for charge {}", charge.getId());
             return;
         }
@@ -107,9 +115,9 @@ public class EmailService {
     private void sendEmail(String to, String subject, String htmlBody) throws MessagingException {
         Message message = new MimeMessage(session);
         try {
-            message.setFrom(new InternetAddress(config.getFromAddress(), config.getFromName(), "UTF-8"));
+            message.setFrom(new InternetAddress(fromAddress, fromName, "UTF-8"));
         } catch (java.io.UnsupportedEncodingException e) {
-            message.setFrom(new InternetAddress(config.getFromAddress()));
+            message.setFrom(new InternetAddress(fromAddress));
         }
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
         message.setSubject(subject);

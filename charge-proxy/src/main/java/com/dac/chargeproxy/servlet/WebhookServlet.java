@@ -1,14 +1,14 @@
 package com.dac.chargeproxy.servlet;
 
-import com.dac.chargeproxy.config.AppConfig;
 import com.dac.chargeproxy.model.WebhookPayload;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.context.support.SpringBeanAutowiringSupport;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -27,27 +27,42 @@ import java.util.stream.Collectors;
  * 
  * Receives POST requests from ASAAS and forwards status updates
  * to the Charge Manager service via SOAP.
+ * 
+ * Mapped via web.xml to /webhook
  */
-@WebServlet("/webhook")
 public class WebhookServlet extends HttpServlet {
 
     private static final Logger logger = LoggerFactory.getLogger(WebhookServlet.class);
-    private static final String CHARGE_MANAGER_URL_KEY = "chargemanager.soap.url";
-    private static final String WEBHOOK_TOKEN_KEY = "webhook.auth.token";
+
+    @Value("${chargemanager.soap.url:http://charge-manager:8080/charge-manager/ws/charge}")
+    private String chargeManagerUrl;
+
+    @Value("${webhook.auth.token:}")
+    private String webhookToken;
 
     private HttpClient httpClient;
-    private String chargeManagerUrl;
-    private String webhookToken;
 
     @Override
     public void init() throws ServletException {
         super.init();
+        SpringBeanAutowiringSupport.processInjectionBasedOnCurrentContext(this);
+        
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
-        this.chargeManagerUrl = AppConfig.getProperty(CHARGE_MANAGER_URL_KEY, 
-                "http://charge-manager:8080/charge-manager/ws/charge");
-        this.webhookToken = AppConfig.getProperty(WEBHOOK_TOKEN_KEY, "");
+        
+        // Override with environment variables if present
+        String envUrl = System.getenv("CHARGE_MANAGER_SOAP_URL");
+        if (envUrl != null && !envUrl.isEmpty()) {
+            this.chargeManagerUrl = envUrl;
+        } else if (chargeManagerUrl == null || chargeManagerUrl.isEmpty()) {
+            this.chargeManagerUrl = "http://charge-manager:8080/charge-manager/ws/charge";
+        }
+        
+        String envToken = System.getenv("WEBHOOK_AUTH_TOKEN");
+        if (envToken != null && !envToken.isEmpty()) {
+            this.webhookToken = envToken;
+        }
         
         logger.info("WebhookServlet initialized - Manager URL: {}", chargeManagerUrl);
     }
