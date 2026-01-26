@@ -9,10 +9,10 @@
 - Sem uso de JPA/Hibernate ou ORM
 
 ### ⚠️ [m2] Use of explicit transaction control
-**Status:** ⚠️ **PARCIALMENTE CONFORME**
-- **Problema:** O `CustomerService` e `ChargeService` não implementam controle explícito de transações
-- **Atual:** Cada operação do repository usa `auto-commit` (padrão JDBC)
-- **Recomendação:** Implementar controle manual de transações com `conn.setAutoCommit(false)`, `commit()` e `rollback()` nos métodos de serviço que fazem múltiplas operações
+**Status:** ✅ **CONFORME**
+- **Resolvido** Os serviços CustomerService implementam controle explícito de transações JDBC. 
+O auto-commit é desativado manualmente (setAutoCommit(false)), e as operações que envolvem múltiplas ações de repositório são tratadas de forma atômica, com commit() em caso de sucesso e rollback() em caso de falha.
+
 
 ### ✅ [m3] Adoption of 3-layer Architecture
 **Status:** ✅ **CONFORME**
